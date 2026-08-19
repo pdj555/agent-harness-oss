@@ -44,6 +44,7 @@
       return;
     }
     label.textContent = info.model ? info.name + " · " + info.model : info.name;
+    if (info.reasoning) label.textContent += " · " + info.reasoning;
     if (hint) hint.hidden = info.name !== "deterministic";
   }
 

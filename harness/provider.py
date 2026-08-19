@@ -109,12 +109,28 @@ class DeterministicProvider:
         return Completion(text="The isolated change is ready for software verification.")
 
 
+REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max"})
+
+
+def reasoning_effort_for(model: str) -> str | None:
+    """Chat Completions `reasoning_effort`. GPT-5.6 defaults to xhigh."""
+    raw = os.environ.get("HARNESS_REASONING")
+    if raw is not None:
+        value = raw.strip().lower()
+        if value in {"", "off"}:
+            return None
+        return value if value in REASONING_EFFORTS else None
+    if model.lower().startswith("gpt-5"):
+        return "xhigh"
+    return None
+
+
 class OpenAICompatProvider:
     name = "openai_compat"
 
     @staticmethod
     def build_payload(messages: list[dict], tools: list[dict], model: str) -> dict:
-        return {
+        payload = {
             "model": model,
             "messages": _openai_messages(messages),
             "tools": [
@@ -130,42 +146,138 @@ class OpenAICompatProvider:
                 for spec in tools
             ],
         }
+        effort = reasoning_effort_for(model)
+        if effort:
+            payload["reasoning_effort"] = effort
+        return payload
+
+    @staticmethod
+    def build_responses_payload(messages: list[dict], tools: list[dict], model: str) -> dict:
+        instructions = ""
+        input_items: list[dict] = []
+        for message in _openai_messages(messages):
+            role = message.get("role")
+            if role == "system":
+                extra = message.get("content") or ""
+                instructions = f"{instructions}\n{extra}".strip() if extra else instructions
+            elif role == "assistant" and message.get("tool_calls"):
+                if message.get("content"):
+                    input_items.append({"role": "assistant", "content": message["content"]})
+                for call in message["tool_calls"]:
+                    function = call.get("function") or {}
+                    input_items.append(
+                        {
+                            "type": "function_call",
+                            "call_id": call.get("id") or "call",
+                            "name": function.get("name") or "",
+                            "arguments": function.get("arguments") or "{}",
+                        }
+                    )
+            elif role == "tool":
+                input_items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": message.get("tool_call_id") or "call",
+                        "output": message.get("content") or "",
+                    }
+                )
+            else:
+                input_items.append({"role": role, "content": message.get("content") or ""})
+        payload = {
+            "model": model,
+            "input": input_items,
+            "tools": [
+                {
+                    "type": "function",
+                    "name": spec["name"],
+                    "description": spec.get("description", ""),
+                    "parameters": spec.get("parameters")
+                    or {"type": "object", "properties": {}},
+                    "strict": False,
+                }
+                for spec in tools
+            ],
+        }
+        if instructions:
+            payload["instructions"] = instructions
+        effort = reasoning_effort_for(model)
+        if effort:
+            payload["reasoning"] = {"effort": effort}
+        return payload
 
     def complete(self, messages: list[dict], tools: list[dict]) -> Completion:
         api_key, base, model = live_endpoint()
+        if model.lower().startswith("gpt-5") and "openai.com" in base:
+            payload = self.build_responses_payload(messages, tools, model)
+            body = _post_json(f"{base}/responses", payload, api_key, timeout=600)
+            return _completion_from_responses(body)
         payload = self.build_payload(messages, tools, model)
         payload["tool_choice"] = "auto"
-        request = urllib.request.Request(
-            f"{base}/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="POST",
-        )
+        timeout = 600 if payload.get("reasoning_effort") or "ollama.com" in base else 120
+        body = _post_json(f"{base}/chat/completions", payload, api_key, timeout=timeout)
+        return _completion_from_chat(body)
+
+
+def _post_json(url: str, payload: dict, api_key: str, *, timeout: int) -> dict:
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:1200]
+        raise RuntimeError(f"provider request failed: HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"provider request failed: {exc}") from exc
+
+
+def _completion_from_chat(body: dict) -> Completion:
+    message = body["choices"][0]["message"]
+    calls = []
+    for item in message.get("tool_calls") or []:
+        function = item.get("function") or {}
+        raw_args = function.get("arguments") or "{}"
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                body = json.loads(response.read().decode("utf-8"))
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"provider request failed: {exc}") from exc
-        message = body["choices"][0]["message"]
-        calls = []
-        for item in message.get("tool_calls") or []:
-            function = item.get("function") or {}
-            raw_args = function.get("arguments") or "{}"
-            try:
-                arguments = json.loads(raw_args)
-            except json.JSONDecodeError:
-                arguments = {}
-            calls.append(
-                ToolCall(
-                    id=item.get("id") or "call",
-                    name=function.get("name") or "",
-                    arguments=arguments if isinstance(arguments, dict) else {},
-                )
+            arguments = json.loads(raw_args)
+        except json.JSONDecodeError:
+            arguments = {}
+        calls.append(
+            ToolCall(
+                id=item.get("id") or "call",
+                name=function.get("name") or "",
+                arguments=arguments if isinstance(arguments, dict) else {},
             )
-        return Completion(text=message.get("content") or "", tool_calls=calls)
+        )
+    return Completion(text=message.get("content") or "", tool_calls=calls)
+
+
+def _completion_from_responses(body: dict) -> Completion:
+    calls = []
+    for item in body.get("output") or []:
+        if item.get("type") != "function_call":
+            continue
+        raw_args = item.get("arguments") or "{}"
+        try:
+            arguments = json.loads(raw_args)
+        except json.JSONDecodeError:
+            arguments = {}
+        calls.append(
+            ToolCall(
+                id=item.get("call_id") or item.get("id") or "call",
+                name=item.get("name") or "",
+                arguments=arguments if isinstance(arguments, dict) else {},
+            )
+        )
+    if calls:
+        return Completion(text="", tool_calls=calls)
+    return Completion(text=body.get("output_text") or "", tool_calls=[])
 
 
 def ollama_host() -> str:
@@ -202,31 +314,43 @@ def pick_ollama_model(names: list[str]) -> str:
     return pool[0] if pool else "gpt-oss:20b"
 
 
+def _openai_key() -> str | None:
+    return os.environ.get("OPENAI_API_KEY") or os.environ.get("HARNESS_API_KEY")
+
+
+def _is_openai_model(model: str | None) -> bool:
+    if not model:
+        return False
+    name = model.lower()
+    return name.startswith("gpt-5") or name.startswith("gpt-4")
+
+
 def live_endpoint() -> tuple[str, str, str]:
     """Return (api_key, base_url, model) for a live vendor."""
-    if os.environ.get("OLLAMA_API_KEY") and os.environ.get("HARNESS_PROVIDER") == "ollama-cloud":
+    provider = (os.environ.get("HARNESS_PROVIDER") or "").lower()
+    explicit_model = os.environ.get("HARNESS_MODEL")
+    openai_key = _openai_key()
+    openai_base = os.environ.get("HARNESS_API_BASE", "https://api.openai.com/v1").rstrip("/")
+    if openai_key and (provider == "openai" or _is_openai_model(explicit_model)):
+        return openai_key, openai_base, explicit_model or "gpt-5.6-luna"
+    if os.environ.get("OLLAMA_API_KEY") and provider != "ollama":
         return (
             os.environ["OLLAMA_API_KEY"],
             os.environ.get("HARNESS_API_BASE", "https://ollama.com/v1").rstrip("/"),
-            os.environ.get("HARNESS_MODEL", "gpt-oss:120b"),
+            explicit_model or "gpt-oss:120b",
         )
-    if ollama_available():
+    if ollama_available() and provider not in {"openai", "xai", "ollama-cloud"}:
         model = pick_ollama_model(ollama_models())
         return "ollama", ollama_host() + "/v1", model
     if os.environ.get("XAI_API_KEY"):
         return (
             os.environ["XAI_API_KEY"],
             os.environ.get("HARNESS_API_BASE", "https://api.x.ai/v1").rstrip("/"),
-            os.environ.get("HARNESS_MODEL", "grok-4-fast"),
+            explicit_model or "grok-4-fast",
         )
-    key = os.environ.get("HARNESS_API_KEY")
-    if key:
-        return (
-            key,
-            os.environ.get("HARNESS_API_BASE", "https://api.openai.com/v1").rstrip("/"),
-            os.environ.get("HARNESS_MODEL", "gpt-4.1-mini"),
-        )
-    raise RuntimeError("start Ollama or set XAI_API_KEY / HARNESS_API_KEY")
+    if openai_key:
+        return openai_key, openai_base, explicit_model or "gpt-5.6-luna"
+    raise RuntimeError("start Ollama or set OPENAI_API_KEY / XAI_API_KEY / HARNESS_API_KEY")
 
 
 def get_provider(name: str) -> Provider:
@@ -234,14 +358,20 @@ def get_provider(name: str) -> Provider:
         return DeterministicProvider()
     if name == "scripted":
         return ScriptedProvider([])
-    if name in {"openai_compat", "openai", "ollama"}:
+    if name in {"openai_compat", "openai", "ollama", "ollama-cloud"}:
         provider = OpenAICompatProvider()
         try:
             key, base, _model = live_endpoint()
         except RuntimeError:
             return provider
-        if key == "ollama" or "11434" in base or "ollama.com" in base:
+        if "ollama.com" in base:
+            provider.name = "ollama-cloud"
+        elif key == "ollama" or "11434" in base:
             provider.name = "ollama"
+        elif "openai.com" in base:
+            provider.name = "openai"
+        elif "x.ai" in base:
+            provider.name = "xai"
         return provider
     raise ValueError(f"unknown provider: {name}")
 
@@ -296,12 +426,16 @@ def _shell_passed(content: str) -> bool:
 
 
 def _openai_messages(messages: list[dict]) -> list[dict]:
-    key = os.environ.get("HARNESS_API_KEY")
+    secrets = []
+    for name in ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"):
+        value = os.environ.get(name)
+        if value:
+            secrets.append(value)
     clean: list[dict] = []
     for message in messages:
         role = message.get("role")
         content = message.get("content") or ""
-        if key:
+        for key in secrets:
             content = content.replace(key, "[redacted]")
         if role == "assistant" and message.get("tool_calls"):
             clean.append(

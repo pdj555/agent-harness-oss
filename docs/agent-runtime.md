@@ -57,7 +57,9 @@ stop raises and is recorded as skipped.
 
 - `deterministic` — used by tests and `harness demo`. It calls the same tools.
 - `scripted` — test double with a programmed list of completions.
-- `openai_compat` — HTTP `chat/completions` with tool calls. Requires
-  `HARNESS_API_KEY`.
+- `openai_compat` — HTTP `chat/completions` with tool calls. `OLLAMA_API_KEY`
+  routes to Ollama Cloud. Else local Ollama if it is running, else
+  `OPENAI_API_KEY` (default `gpt-5.6-luna`, `xhigh`) or `XAI_API_KEY`.
+  `HARNESS_PROVIDER=ollama` keeps the local `$0` path.
 
 Swap providers without changing the runtime.

@@ -9,6 +9,23 @@ from harness.app import create_app
 from harness.config import Config
 from tests.helpers import copy_sample, git_init
 
+_LIVE_ENV = (
+    "XAI_API_KEY",
+    "OPENAI_API_KEY",
+    "HARNESS_API_KEY",
+    "OLLAMA_API_KEY",
+    "HARNESS_PROVIDER",
+    "HARNESS_MODEL",
+    "HARNESS_REASONING",
+    "HARNESS_API_BASE",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_live_env(monkeypatch):
+    for name in _LIVE_ENV:
+        monkeypatch.delenv(name, raising=False)
+
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:

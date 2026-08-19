@@ -12,11 +12,21 @@ DEFAULT_SAMPLE = PACKAGE_ROOT / "examples" / "sample-repo"
 
 
 def _load_dotenv() -> None:
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
         return
-    load_dotenv()
+    for candidate in (Path.cwd() / ".env", PACKAGE_ROOT / ".env"):
+        if not candidate.is_file():
+            continue
+        for line in candidate.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, _, value = stripped.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'").strip('"')
+            if key and key not in os.environ:
+                os.environ[key] = value
+        break
 
 
 @dataclass
@@ -33,7 +43,12 @@ class Config:
 
 
 def has_live_key() -> bool:
-    return bool(os.environ.get("XAI_API_KEY") or os.environ.get("HARNESS_API_KEY"))
+    return bool(
+        os.environ.get("XAI_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("HARNESS_API_KEY")
+        or os.environ.get("OLLAMA_API_KEY")
+    )
 
 
 def extra_repos_path(data_dir: Path) -> Path:

@@ -27,10 +27,16 @@ agent writes a live plan from that evidence, ships in isolation, and stops
 when checks pass. You can still type a specific objective.
 
 Serve prefers **local Ollama** when it is running (`gpt-oss:20b` if installed,
-never a `:cloud` tag unless you set `HARNESS_MODEL`). That is $0. Ollama Cloud
-is a flat $0 / $20 / $100 quota for models that will not fit on your machine.
-Pay-per-token OSS hosts (Groq, Fireworks, DeepInfra) are cheaper than Cloud Pro
-if you only need bursts of a 120B model.
+never a `:cloud` tag unless you set `HARNESS_MODEL`). That is $0, which is why
+Ollama Cloud usage stays at zero until you pin a `:cloud` model.
+
+An `OLLAMA_API_KEY` in `.env` sends traffic to Ollama Cloud (`gpt-oss:120b`
+unless you set `HARNESS_MODEL`). Local `$0` stays available with
+`HARNESS_PROVIDER=ollama`.
+
+Paid OpenAI daily driver is **GPT-5.6 Luna** at `reasoning_effort=xhigh`
+($0.20 / $1.20 per 1M). Pin it with `OPENAI_API_KEY` and
+`HARNESS_PROVIDER=openai`. `HARNESS_MODEL=gpt-5.6-sol` for the close.
 
 `harness demo` stays on the scripted sample agent so CI does not need a vendor.
 

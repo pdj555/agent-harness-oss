@@ -48,15 +48,21 @@ def configuration_answer(objective: str, provider: Provider) -> str | None:
         return (
             "This run uses the deterministic provider: a local scripted agent for "
             "tests and the sample demo. It is not a live model. Start Ollama or set "
-            "XAI_API_KEY for a real model."
+            "OPENAI_API_KEY for a real model."
         )
-    try:
-        from harness.provider import live_endpoint
+    from harness.provider import live_endpoint, reasoning_effort_for
 
+    try:
         _key, _base, model = live_endpoint()
     except RuntimeError:
         model = os.environ.get("HARNESS_MODEL")
     if model:
+        effort = reasoning_effort_for(model)
+        if effort:
+            return (
+                f"This run uses the {provider.name} provider with model {model} "
+                f"({effort} reasoning)."
+            )
         return f"This run uses the {provider.name} provider with model {model}."
     return f"This run uses the {provider.name} provider."
 
@@ -333,7 +339,8 @@ def _brief(arguments: dict | None) -> str:
 
 
 def _redact(text: str) -> str:
-    key = os.environ.get("HARNESS_API_KEY")
-    if key:
-        text = text.replace(key, "[redacted]")
+    for name in ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"):
+        key = os.environ.get(name)
+        if key:
+            text = text.replace(key, "[redacted]")
     return text

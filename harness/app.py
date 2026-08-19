@@ -111,16 +111,22 @@ def create_app(config: Config | None = None) -> FastAPI:
         return {"ok": True}
 
     def _provider_public() -> dict:
+        from harness.provider import live_endpoint, reasoning_effort_for
+
         name = getattr(provider, "name", config.provider_name)
         model = None
+        reasoning = None
         if name != "deterministic":
             try:
-                from harness.provider import live_endpoint
-
                 model = live_endpoint()[2]
             except RuntimeError:
                 model = os.environ.get("HARNESS_MODEL")
-        return {"provider": {"name": name, "model": model}, "mission": NEXT_DOLLAR}
+            if model:
+                reasoning = reasoning_effort_for(model)
+        return {
+            "provider": {"name": name, "model": model, "reasoning": reasoning},
+            "mission": NEXT_DOLLAR,
+        }
 
     @app.get("/api/me")
     def me(request: Request) -> dict:
