@@ -1,7 +1,20 @@
 from __future__ import annotations
 
-from harness.provider import DeterministicProvider, OpenAICompatProvider, ScriptedProvider, get_provider
+from harness.provider import (
+    DeterministicProvider,
+    OpenAICompatProvider,
+    ScriptedProvider,
+    get_provider,
+    pick_ollama_model,
+)
 from harness.tools import tool_specs
+
+
+def test_pick_ollama_model_prefers_local_oss_over_cloud_tags():
+    chosen = pick_ollama_model(
+        ["kimi-k2.7-code:cloud", "gpt-oss:20b", "minimax-m2.7:cloud"]
+    )
+    assert chosen == "gpt-oss:20b"
 
 
 def test_provider_boundary_substitutes_deterministic():

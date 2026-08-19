@@ -168,8 +168,51 @@ class OpenAICompatProvider:
         return Completion(text=message.get("content") or "", tool_calls=calls)
 
 
+def ollama_host() -> str:
+    return os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+
+
+def ollama_available() -> bool:
+    try:
+        with urllib.request.urlopen(ollama_host() + "/api/tags", timeout=0.4) as response:
+            return response.status == 200
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+
+def ollama_models() -> list[str]:
+    try:
+        with urllib.request.urlopen(ollama_host() + "/api/tags", timeout=1.5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+        return []
+    return [str(item.get("name")) for item in payload.get("models") or [] if item.get("name")]
+
+
+def pick_ollama_model(names: list[str]) -> str:
+    explicit = os.environ.get("HARNESS_MODEL") or os.environ.get("OLLAMA_MODEL")
+    if explicit:
+        return explicit
+    local = [name for name in names if ":cloud" not in name]
+    pool = local or names
+    for needle in ("gpt-oss:20b", "qwen2.5-coder", "qwen3-coder", "gpt-oss", "coder"):
+        for name in pool:
+            if needle in name:
+                return name
+    return pool[0] if pool else "gpt-oss:20b"
+
+
 def live_endpoint() -> tuple[str, str, str]:
     """Return (api_key, base_url, model) for a live vendor."""
+    if os.environ.get("OLLAMA_API_KEY") and os.environ.get("HARNESS_PROVIDER") == "ollama-cloud":
+        return (
+            os.environ["OLLAMA_API_KEY"],
+            os.environ.get("HARNESS_API_BASE", "https://ollama.com/v1").rstrip("/"),
+            os.environ.get("HARNESS_MODEL", "gpt-oss:120b"),
+        )
+    if ollama_available():
+        model = pick_ollama_model(ollama_models())
+        return "ollama", ollama_host() + "/v1", model
     if os.environ.get("XAI_API_KEY"):
         return (
             os.environ["XAI_API_KEY"],
@@ -183,7 +226,7 @@ def live_endpoint() -> tuple[str, str, str]:
             os.environ.get("HARNESS_API_BASE", "https://api.openai.com/v1").rstrip("/"),
             os.environ.get("HARNESS_MODEL", "gpt-4.1-mini"),
         )
-    raise RuntimeError("set XAI_API_KEY or HARNESS_API_KEY for a live model")
+    raise RuntimeError("start Ollama or set XAI_API_KEY / HARNESS_API_KEY")
 
 
 def get_provider(name: str) -> Provider:
@@ -191,8 +234,15 @@ def get_provider(name: str) -> Provider:
         return DeterministicProvider()
     if name == "scripted":
         return ScriptedProvider([])
-    if name in {"openai_compat", "openai"}:
-        return OpenAICompatProvider()
+    if name in {"openai_compat", "openai", "ollama"}:
+        provider = OpenAICompatProvider()
+        try:
+            key, base, _model = live_endpoint()
+        except RuntimeError:
+            return provider
+        if key == "ollama" or "11434" in base or "ollama.com" in base:
+            provider.name = "ollama"
+        return provider
     raise ValueError(f"unknown provider: {name}")
 
 

@@ -47,10 +47,15 @@ def configuration_answer(objective: str, provider: Provider) -> str | None:
     if provider.name == "deterministic":
         return (
             "This run uses the deterministic provider: a local scripted agent for "
-            "tests and the sample demo. It is not a live model. Set provider.name to "
-            "openai_compat and HARNESS_API_KEY to use a vendor model."
+            "tests and the sample demo. It is not a live model. Start Ollama or set "
+            "XAI_API_KEY for a real model."
         )
-    model = os.environ.get("HARNESS_MODEL")
+    try:
+        from harness.provider import live_endpoint
+
+        _key, _base, model = live_endpoint()
+    except RuntimeError:
+        model = os.environ.get("HARNESS_MODEL")
     if model:
         return f"This run uses the {provider.name} provider with model {model}."
     return f"This run uses the {provider.name} provider."

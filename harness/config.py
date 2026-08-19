@@ -97,8 +97,11 @@ def load_config(path: Path | None = None, *, prefer_live: bool = True) -> Config
     env_provider = os.environ.get("HARNESS_PROVIDER")
     if env_provider:
         config.provider_name = env_provider
-    elif prefer_live and config.provider_name == "deterministic" and has_live_key():
-        config.provider_name = "openai_compat"
+    elif prefer_live and config.provider_name == "deterministic":
+        from harness.provider import ollama_available
+
+        if has_live_key() or ollama_available():
+            config.provider_name = "openai_compat"
     config.data_dir = config.data_dir.expanduser()
     if not config.data_dir.is_absolute():
         config.data_dir = Path.cwd() / config.data_dir

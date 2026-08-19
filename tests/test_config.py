@@ -24,6 +24,7 @@ def test_prefer_live_selects_openai_compat_when_xai_key_present(tmp_path: Path, 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
     monkeypatch.delenv("HARNESS_PROVIDER", raising=False)
+    monkeypatch.setattr("harness.provider.ollama_available", lambda: False)
     config = load_config(prefer_live=True)
     assert config.provider_name == "openai_compat"
     assert has_live_key()

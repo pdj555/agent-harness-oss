@@ -13,7 +13,8 @@ proof, then a decision to land the diff.
 ## Run it for real
 
 ```bash
-export XAI_API_KEY=...          # https://console.x.ai
+# Cheapest live path: local Ollama, already installed.
+# ollama serve && ollama pull gpt-oss:20b
 uv sync --extra dev
 uv run harness user add preston --password 'choose-your-own'
 uv run harness repo add /path/to/the/repo/that/prints/money
@@ -25,9 +26,13 @@ Open `http://127.0.0.1:7465`, log in, pick that repository, and click
 agent writes a live plan from that evidence, ships in isolation, and stops
 when checks pass. You can still type a specific objective.
 
-If `XAI_API_KEY` is set, serve uses xAI (`grok-4-fast` by default). Override
-with `HARNESS_MODEL`. `harness demo` stays on the scripted sample agent so
-CI and first-run checks do not need a vendor.
+Serve prefers **local Ollama** when it is running (`gpt-oss:20b` if installed,
+never a `:cloud` tag unless you set `HARNESS_MODEL`). That is $0. Ollama Cloud
+is a flat $0 / $20 / $100 quota for models that will not fit on your machine.
+Pay-per-token OSS hosts (Groq, Fireworks, DeepInfra) are cheaper than Cloud Pro
+if you only need bursts of a 120B model.
+
+`harness demo` stays on the scripted sample agent so CI does not need a vendor.
 
 ## Why this is not a chat demo
 
