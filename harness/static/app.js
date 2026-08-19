@@ -106,6 +106,13 @@
     });
   });
 
+  objectiveInput.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+    event.preventDefault();
+    if (typeof composer.requestSubmit === "function") composer.requestSubmit();
+    else composer.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+  });
+
   stopButton.addEventListener("click", function () {
     if (!currentRunId) return;
     api("/api/runs/" + currentRunId + "/stop", { method: "POST" }).then(function (body) {

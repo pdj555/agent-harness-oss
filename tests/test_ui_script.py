@@ -33,6 +33,7 @@ def test_login_json_reveals_workspace_without_a_followup_me_call():
     assert payload["workspaceVisibleClass"] is True
     assert payload["authVisibleClass"] is False
     assert payload["whoami"] == "ada"
+    assert payload["sentWithCommandEnter"] is True
 
 
 def test_account_request_is_mailto_not_self_serve_signup():

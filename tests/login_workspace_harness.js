@@ -32,6 +32,11 @@ function el(id, extras) {
   return item;
 }
 
+const composerEl = el("composer", {});
+composerEl.requestSubmit = function () {
+  composerEl.dispatch("submit", { preventDefault: function () {} });
+};
+
 const nodes = {
   "auth-gate": el("auth-gate", { className: "auth-gate" }),
   workspace: el("workspace", { className: "workspace" }),
@@ -43,7 +48,7 @@ const nodes = {
   "repo-select": el("repo-select", {}),
   "history-list": el("history-list", {}),
   "history-empty": el("history-empty", {}),
-  composer: el("composer", {}),
+  composer: composerEl,
   objective: el("objective", {}),
   "composer-error": el("composer-error", {}),
   "stop-button": el("stop-button", {}),
@@ -84,6 +89,13 @@ global.fetch = function (path, options) {
       ok: true,
       status: 200,
       json: function () { return Promise.resolve({ repos: [{ id: "sample", name: "sample-repo" }] }); }
+    });
+  }
+  if (path === "/api/runs" && method === "POST") {
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: function () { return Promise.resolve({ id: "run-1", status: "queued", events: [] }); }
     });
   }
   if (path === "/api/runs") {
@@ -132,7 +144,31 @@ Promise.resolve().then(function () {
     console.error(JSON.stringify(result));
     process.exit(3);
   }
-  console.log(JSON.stringify(result));
+  nodes["repo-select"].value = "sample";
+  nodes.objective.value = "fix the tests";
+  nodes.objective.dispatch("keydown", {
+    key: "Enter",
+    metaKey: true,
+    ctrlKey: false,
+    preventDefault: function () {}
+  });
+  return new Promise(function (resolve) { setTimeout(resolve, 40); });
+}).then(function () {
+  const sent = calls.some(function (c) { return c.method === "POST" && c.path === "/api/runs"; });
+  if (!sent) {
+    console.error(JSON.stringify({ calls: calls, reason: "cmd-enter did not submit" }));
+    process.exit(5);
+  }
+  console.log(JSON.stringify({
+    authHidden: nodes["auth-gate"].hidden,
+    workspaceHidden: nodes.workspace.hidden,
+    authVisibleClass: nodes["auth-gate"].classList.contains("is-visible"),
+    workspaceVisibleClass: nodes.workspace.classList.contains("is-visible"),
+    whoami: nodes.whoami.textContent,
+    sentWithCommandEnter: true,
+    calls: calls.map(function (c) { return c.method + " " + c.path; })
+  }));
+  process.exit(0);
 }).catch(function (err) {
   console.error(String(err && err.stack || err));
   process.exit(4);
