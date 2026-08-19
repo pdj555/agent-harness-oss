@@ -54,7 +54,7 @@
         </header>
 
         <section id="empty-state" class="empty">
-          <p>Name the outcome that makes money. The agent works in an isolated worktree and applies nothing until checks pass.</p>
+          <p>Do not prompt like a copilot. Point this at a repository that makes money, then take the next dollar. The agent scans for leverage, works in an isolated worktree, and applies nothing until checks pass.</p>
           <p id="live-hint" class="quiet">This session is the scripted sample agent. Export XAI_API_KEY and restart to run a live model against a real repository.</p>
         </section>
 
@@ -80,6 +80,7 @@
         <form id="composer" class="composer">
           <label class="sr-only" for="objective">Objective</label>
           <textarea id="objective" rows="3" maxlength="20000" required placeholder="Ship the change that most increases revenue or stops a loss, and prove it."></textarea>
+          <button type="button" id="next-dollar" class="ghost">Next dollar</button>
           <button type="submit" id="send-button">Run</button>
           <p id="composer-error" class="form-error" role="alert"></p>
         </form>

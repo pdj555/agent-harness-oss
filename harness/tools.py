@@ -57,6 +57,11 @@ def execute(
         if helper is None:
             raise ToolError("delegation is unavailable")
         return helper(str(args.get("objective") or ""))
+    if name == "set_plan":
+        steps = args.get("steps") or []
+        if not isinstance(steps, list) or not steps:
+            raise ToolError("set_plan requires a non-empty steps list")
+        return "plan recorded: " + " | ".join(str(step) for step in steps[:12])
     raise ToolError(f"unknown tool: {name}")
 
 
@@ -97,6 +102,14 @@ TOOL_PARAMETERS = {
         "properties": {"objective": {"type": "string"}},
         "required": ["objective"],
     },
+    "set_plan": {
+        "type": "object",
+        "properties": {
+            "why": {"type": "string"},
+            "steps": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["steps"],
+    },
 }
 
 
@@ -112,6 +125,7 @@ def tool_specs(role: str) -> list[dict]:
         "git_status": "Show git status of the isolated worktree.",
         "git_diff": "Show git diff of the isolated worktree.",
         "delegate": "Ask a helper to inspect an independent question and return evidence.",
+        "set_plan": "Replace the live plan with evidence-backed steps before editing.",
     }
     specs = []
     for name in sorted(ROLE_TOOLS[role]):

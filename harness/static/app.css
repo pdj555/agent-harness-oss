@@ -150,11 +150,11 @@ button.danger { background: var(--fail); color: #fff; }
   margin-top: auto;
   padding: 16px 0 22px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 10px;
 }
 .composer textarea { grid-column: 1 / 2; }
-.composer button { align-self: end; }
+.composer button, .composer a { align-self: end; }
 .composer .form-error { grid-column: 1 / -1; }
 
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
@@ -170,6 +170,7 @@ button.danger { background: var(--fail); color: #fff; }
   border-bottom-color: var(--accent);
 }
 .plan, .files { padding-left: 18px; }
+.plan .current { color: var(--accent); }
 .mono, .diff, .log {
   font-family: var(--mono);
   font-size: 12px;

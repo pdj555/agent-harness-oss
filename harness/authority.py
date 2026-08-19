@@ -21,6 +21,7 @@ ROLE_TOOLS = {
         "git_status",
         "git_diff",
         "delegate",
+        "set_plan",
     },
     "helper": {
         "list_files",

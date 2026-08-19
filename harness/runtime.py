@@ -5,6 +5,7 @@ import os
 from harness.authority import PathDenied, PermissionDenied
 from harness.config import Config
 from harness.isolation import IsolationError, create_stage
+from harness.leverage import scan as leverage_scan
 from harness.provider import Completion, Provider
 from harness.review import run_review
 from harness.store import Store
@@ -29,6 +30,11 @@ DEFAULT_PLAN = [
     "Prove it with the project's tests",
     "Independent review",
 ]
+
+NEXT_DOLLAR = (
+    "Find the highest-leverage change that increases revenue or stops a loss, "
+    "ship it in isolation, and prove it with the project's tests."
+)
 
 
 def configuration_answer(objective: str, provider: Provider) -> str | None:
@@ -96,18 +102,28 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         store.update_run(run_id, status="failed", result=str(exc), blockers=["isolation"])
         return
 
+    scan_text = leverage_scan(stage.root)
     store.update_run(
         run_id,
         status="running",
         stage_path=str(stage.root),
         plan=list(DEFAULT_PLAN),
-        investigating="Inspecting the repository boundary and tests.",
-        active_work="Starting the principal agent.",
+        investigating="Ranking leverage from tests, markers, and recent commits.",
+        active_work="Software scan",
     )
+    store.add_event(run_id, "evidence", scan_text[:2000])
 
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM},
-        {"role": "user", "content": run.objective},
+        {
+            "role": "user",
+            "content": (
+                f"{run.objective}\n\n"
+                "SOFTWARE LEVERAGE SCAN (not model output):\n"
+                f"{scan_text}\n"
+                "Act on the highest-leverage item. Call set_plan with a live plan before editing."
+            ),
+        },
     ]
     tools = tool_specs("principal")
     repairs = 0
@@ -143,8 +159,10 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                     store.add_event(run_id, "decision", f"{call.name} skipped because stop was requested")
                     store.update_run(run_id, status="stopped", result="Stopped by the user.")
                     return
-                store.update_run(run_id, active_work=f"{call.name}")
+                store.update_run(run_id, active_work=_human_action(call.name, call.arguments))
                 try:
+                    if call.name == "set_plan":
+                        _apply_plan(store, run_id, call.arguments or {})
                     output = execute(
                         call.name,
                         call.arguments or {},
@@ -153,7 +171,9 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                         helper=helper,
                         stopped=bool(current and current.stop_requested),
                     )
-                    store.add_event(run_id, "action", f"{call.name} { _brief(call.arguments)}")
+                    store.add_event(
+                        run_id, "action", _human_action(call.name, call.arguments)
+                    )
                     if call.name in {"edit_file", "run_shell", "git_diff", "git_status"}:
                         store.update_run(
                             run_id,
@@ -261,6 +281,43 @@ def _assistant_message(completion: Completion) -> dict:
             for call in completion.tool_calls
         ],
     }
+
+
+def _apply_plan(store: Store, run_id: str, arguments: dict) -> None:
+    raw_steps = arguments.get("steps") or []
+    steps = [str(step).strip() for step in raw_steps if str(step).strip()][:12]
+    if not steps:
+        return
+    why = str(arguments.get("why") or "").strip()
+    store.update_run(
+        run_id,
+        plan=steps,
+        investigating=why or "Live plan recorded from evidence.",
+        active_work=steps[0],
+    )
+
+
+def _human_action(name: str, arguments: dict | None) -> str:
+    args = arguments or {}
+    if name == "list_files":
+        return f"Listed files ({args.get('pattern') or '*'})"
+    if name == "read_file":
+        return f"Read {args.get('path') or 'a file'}"
+    if name == "search":
+        return f"Searched for {args.get('query') or 'a pattern'}"
+    if name == "edit_file":
+        return f"Edited {args.get('path') or 'a file'}"
+    if name == "run_shell":
+        return f"Ran {str(args.get('command') or 'a command')[:80]}"
+    if name == "git_status":
+        return "Inspected git status"
+    if name == "git_diff":
+        return "Inspected git diff"
+    if name == "set_plan":
+        return "Updated the live plan"
+    if name == "delegate":
+        return f"Delegated: {str(args.get('objective') or '')[:80]}"
+    return name
 
 
 def _brief(arguments: dict | None) -> str:

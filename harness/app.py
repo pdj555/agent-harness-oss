@@ -12,7 +12,7 @@ from harness.auth import new_session_token, verify_password
 from harness.config import Config, load_config
 from harness.isolation import Stage
 from harness.provider import get_provider
-from harness.runtime import execute_run
+from harness.runtime import NEXT_DOLLAR, execute_run
 from harness.store import Store, User
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -120,7 +120,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 model = live_endpoint()[2]
             except RuntimeError:
                 model = os.environ.get("HARNESS_MODEL")
-        return {"provider": {"name": name, "model": model}}
+        return {"provider": {"name": name, "model": model}, "mission": NEXT_DOLLAR}
 
     @app.get("/api/me")
     def me(request: Request) -> dict:

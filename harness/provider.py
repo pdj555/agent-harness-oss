@@ -73,6 +73,18 @@ class DeterministicProvider:
         results = _tool_history(messages)
         if not _has_tool(results, "list_files"):
             return _call("list_files", {"pattern": "*.py"})
+        if not _has_tool(results, "set_plan"):
+            return _call(
+                "set_plan",
+                {
+                    "why": "Failing priority tests block shipping this library.",
+                    "steps": [
+                        "Confirm the failing priority tests",
+                        "Fix classify_priority labels to match the spec",
+                        "Re-run tests",
+                    ],
+                },
+            )
         if not _read_path(results, "tracker.py"):
             return _call("read_file", {"path": "tracker.py"})
         if not _read_path(results, "test_tracker.py"):

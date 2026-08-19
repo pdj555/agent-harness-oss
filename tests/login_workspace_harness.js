@@ -55,6 +55,9 @@ const nodes = {
   "empty-state": el("empty-state", {}),
   "run-view": el("run-view", {}),
   "publish-button": el("publish-button", {}),
+  "next-dollar": el("next-dollar", {}),
+  "live-hint": el("live-hint", {}),
+  "provider-label": el("provider-label", {}),
   "auth-username": el("auth-username", { value: "ada" }),
   "auth-password": el("auth-password", { value: "correct-horse" })
 };

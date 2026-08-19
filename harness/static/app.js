@@ -55,9 +55,10 @@
     whoami.textContent = username || "";
   }
 
-  function enterWorkspace(username, provider) {
+  function enterWorkspace(username, provider, mission) {
     showWorkspace(username);
     showProvider(provider);
+    if (mission) window.__mission = mission;
     loadRepos();
     loadHistory();
   }
@@ -92,7 +93,7 @@
         setAuthError(body.error || "Could not authenticate");
         return;
       }
-      enterWorkspace(body.username, body.provider);
+      enterWorkspace(body.username, body.provider, body.mission);
     });
   }
 
@@ -117,6 +118,15 @@
       watchRun(body.id);
       loadHistory();
     });
+  });
+
+  document.getElementById("next-dollar").addEventListener("click", function () {
+    objectiveInput.value = window.__mission || (
+      "Find the highest-leverage change that increases revenue or stops a loss, "
+      + "ship it in isolation, and prove it with the project's tests."
+    );
+    if (typeof composer.requestSubmit === "function") composer.requestSubmit();
+    else composer.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
   });
 
   objectiveInput.addEventListener("keydown", function (event) {
@@ -175,7 +185,7 @@
         showAuth();
         return;
       }
-      enterWorkspace(me.username, me.provider);
+      enterWorkspace(me.username, me.provider, me.mission);
     });
   }
 
@@ -264,6 +274,7 @@
     plan.forEach(function (step) {
       var item = document.createElement("li");
       item.textContent = step;
+      if (run.active_work && step === run.active_work) item.className = "current";
       planList.appendChild(item);
     });
 

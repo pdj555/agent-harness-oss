@@ -20,12 +20,10 @@ uv run harness repo add /path/to/the/repo/that/prints/money
 uv run harness serve
 ```
 
-Open `http://127.0.0.1:7465`, log in, pick that repository, and submit an
-objective such as:
-
-```text
-Ship the change that most increases revenue or stops a loss, and prove it.
-```
+Open `http://127.0.0.1:7465`, log in, pick that repository, and click
+**Next dollar**. Software scans tests, TODO markers, and recent commits; the
+agent writes a live plan from that evidence, ships in isolation, and stops
+when checks pass. You can still type a specific objective.
 
 If `XAI_API_KEY` is set, serve uses xAI (`grok-4-fast` by default). Override
 with `HARNESS_MODEL`. `harness demo` stays on the scripted sample agent so
