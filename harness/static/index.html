@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agent Harness</title>
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <section id="auth-gate" class="auth-gate" hidden>
+      <div class="auth-card">
+        <p class="eyebrow">Local agent harness</p>
+        <h1>Prove the change.</h1>
+        <p class="lede">Sign in on this machine, pick an allowlisted repository, and give one software objective. The agent works in an isolated git worktree. Software decides whether it is done.</p>
+        <form id="auth-form">
+          <label>Username <input id="auth-username" name="username" autocomplete="username" required minlength="3" maxlength="32"></label>
+          <label>Password <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="8"></label>
+          <div class="auth-actions">
+            <button type="submit" id="login-button">Log in</button>
+            <button type="button" id="signup-button" class="ghost">Create account</button>
+          </div>
+          <p id="auth-error" class="form-error" role="alert"></p>
+        </form>
+      </div>
+    </section>
+
+    <div id="workspace" class="workspace" hidden>
+      <aside class="rail" aria-label="Repositories and history">
+        <div class="brand">
+          <span class="mark">AH</span>
+          <div>
+            <strong>Agent Harness</strong>
+            <small>Evidence over claims</small>
+          </div>
+        </div>
+        <div class="account-row">
+          <span id="whoami"></span>
+          <button type="button" id="logout-button" class="text-button">Log out</button>
+        </div>
+        <label class="field">
+          Repository
+          <select id="repo-select" aria-label="Repository"></select>
+        </label>
+        <p class="utility">Recent runs</p>
+        <div id="history-list" class="history"></div>
+        <p id="history-empty" class="quiet">No runs yet.</p>
+      </aside>
+
+      <main class="stage">
+        <header class="stage-head">
+          <div>
+            <p class="eyebrow" id="run-status-label">Ready</p>
+            <h2 id="run-title">New objective</h2>
+          </div>
+          <button type="button" id="stop-button" class="danger" hidden>Stop</button>
+        </header>
+
+        <section id="empty-state" class="empty">
+          <h1>One objective. Isolated work. Real proof.</h1>
+          <p>The principal agent inspects the repository, edits in a git worktree, runs tests, and submits to an independent review. Completion is a software verdict, not a model saying “done.”</p>
+        </section>
+
+        <section id="run-view" hidden>
+          <article class="objective-block">
+            <span class="kicker">Objective</span>
+            <p id="objective-text"></p>
+          </article>
+          <p class="lead-line"><span class="kicker">Investigating</span> <span id="investigating"></span></p>
+          <p class="lead-line muted"><span class="kicker">Active work</span> <span id="active-work"></span></p>
+          <ol id="event-list" class="events"></ol>
+          <section id="result-card" class="result" hidden>
+            <h3 id="result-heading">Result</h3>
+            <p id="result-text"></p>
+            <button type="button" id="publish-button" hidden>Publish verified delta</button>
+          </section>
+          <section id="blocker-card" class="blockers" hidden>
+            <h3>Blockers</h3>
+            <ul id="blocker-list"></ul>
+          </section>
+        </section>
+
+        <form id="composer" class="composer">
+          <label class="sr-only" for="objective">Objective</label>
+          <textarea id="objective" rows="3" maxlength="20000" required placeholder="Find the highest impact reliability problem, fix it, and prove the result."></textarea>
+          <button type="submit" id="send-button">Run</button>
+          <p id="composer-error" class="form-error" role="alert"></p>
+        </form>
+      </main>
+
+      <aside class="panel" aria-label="Plan, changes, and proof">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" aria-selected="true" data-tab="plan">Plan</button>
+          <button type="button" role="tab" aria-selected="false" data-tab="changes">Changes</button>
+          <button type="button" role="tab" aria-selected="false" data-tab="proof">Proof</button>
+        </div>
+        <section id="plan-view" class="panel-view">
+          <ol id="plan-list" class="plan"></ol>
+          <p id="plan-empty" class="quiet">The plan appears once a run starts.</p>
+        </section>
+        <section id="changes-view" class="panel-view" hidden>
+          <ul id="file-list" class="files"></ul>
+          <pre id="diff-view" class="diff"></pre>
+          <p id="changes-empty" class="quiet">Changed files appear after edits in the worktree.</p>
+        </section>
+        <section id="proof-view" class="panel-view" hidden>
+          <h3>Checks <span id="check-badge" class="kicker"></span></h3>
+          <p id="check-command" class="mono"></p>
+          <pre id="check-output" class="log"></pre>
+          <h3>Review</h3>
+          <p id="review-summary"></p>
+          <p id="proof-empty" class="quiet">Verification evidence is recorded by software, not by the model.</p>
+        </section>
+      </aside>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

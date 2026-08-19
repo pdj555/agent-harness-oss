@@ -1,0 +1,17 @@
+# Copy to harness.toml or pass --config.
+# Paths in workspace.roots are the only repositories the app will open.
+
+[server]
+host = "127.0.0.1"
+port = 7465
+
+[workspace]
+roots = ["examples/sample-repo"]
+
+[provider]
+# "deterministic" runs the demo and tests without a paid vendor.
+# "openai_compat" uses HARNESS_API_KEY, HARNESS_API_BASE, and HARNESS_MODEL.
+name = "deterministic"
+
+[data]
+dir = ".harness"
