@@ -35,6 +35,16 @@
     workspace.classList.remove("is-visible");
   }
 
+  function showProvider(info) {
+    var label = document.getElementById("provider-label");
+    if (!label) return;
+    if (!info || !info.name) {
+      label.textContent = "";
+      return;
+    }
+    label.textContent = info.model ? info.name + " · " + info.model : info.name;
+  }
+
   function showWorkspace(username) {
     authGate.hidden = true;
     authGate.classList.remove("is-visible");
@@ -43,8 +53,9 @@
     whoami.textContent = username || "";
   }
 
-  function enterWorkspace(username) {
+  function enterWorkspace(username, provider) {
     showWorkspace(username);
+    showProvider(provider);
     loadRepos();
     loadHistory();
   }
@@ -79,7 +90,7 @@
         setAuthError(body.error || "Could not authenticate");
         return;
       }
-      enterWorkspace(body.username);
+      enterWorkspace(body.username, body.provider);
     });
   }
 
@@ -162,7 +173,7 @@
         showAuth();
         return;
       }
-      enterWorkspace(me.username);
+      enterWorkspace(me.username, me.provider);
     });
   }
 

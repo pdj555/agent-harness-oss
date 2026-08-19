@@ -27,9 +27,55 @@ DEFAULT_PLAN = [
 ]
 
 
+def configuration_answer(objective: str, provider: Provider) -> str | None:
+    text = " ".join((objective or "").lower().split())
+    if not any(
+        phrase in text
+        for phrase in ("what model", "which model", "what provider", "which provider", "what llm")
+    ):
+        return None
+    if provider.name == "deterministic":
+        return (
+            "This run uses the deterministic provider: a local scripted agent for "
+            "tests and the sample demo. It is not a live model. Set provider.name to "
+            "openai_compat and HARNESS_API_KEY to use a vendor model."
+        )
+    model = os.environ.get("HARNESS_MODEL")
+    if model:
+        return f"This run uses the {provider.name} provider with model {model}."
+    return f"This run uses the {provider.name} provider."
+
+
 def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider) -> None:
     run = store.get_run(run_id)
     if run is None:
+        return
+    answer = configuration_answer(run.objective, provider)
+    if answer:
+        store.update_run(
+            run_id,
+            status="completed",
+            plan=["Answer from runtime configuration"],
+            investigating="",
+            active_work="",
+            result=answer,
+            files_changed=[],
+            diff="",
+            verification={
+                "passed": True,
+                "command": "not applicable",
+                "exit_code": 0,
+                "output": "No repository checks; no code change was requested.",
+            },
+            review={
+                "role": "reviewer",
+                "passed": True,
+                "summary": "No repository change requested.",
+                "findings": [],
+                "files_reviewed": [],
+            },
+        )
+        store.add_event(run_id, "result", answer)
         return
     repo = store.repo_by_id(run.repo_id, config.workspace_roots)
     if repo is None:

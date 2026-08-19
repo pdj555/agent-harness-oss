@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from harness.config import Config
-from harness.provider import Completion, ScriptedProvider, ToolCall
+from harness.provider import Completion, DeterministicProvider, ScriptedProvider, ToolCall
 from harness.runtime import execute_run
 from harness.store import Store
 from tests.helpers import copy_sample, git_init
@@ -26,6 +26,22 @@ def _setup(tmp_path: Path) -> tuple[Store, Config, str]:
     repo = store.list_repos(config.workspace_roots)[0]
     run = store.create_run(user.id, repo.id, "Find the reliability bug, fix it, and prove it.")
     return store, config, run.id
+
+
+def test_model_question_does_not_edit_the_repository(tmp_path: Path):
+    store, config, _ = _setup(tmp_path)
+    source = config.workspace_roots[0]
+    before = (source / "tracker.py").read_text(encoding="utf-8")
+    repo = store.list_repos(config.workspace_roots)[0]
+    user = store.get_user_by_username("ada")
+    run = store.create_run(user.id, repo.id, "what model is this?")
+    execute_run(run.id, store=store, config=config, provider=DeterministicProvider())
+    finished = store.get_run(run.id)
+    assert finished.status == "completed"
+    assert "deterministic" in (finished.result or "").lower()
+    assert "live model" in (finished.result or "").lower() or "scripted" in (finished.result or "").lower()
+    assert not finished.files_changed
+    assert (source / "tracker.py").read_text(encoding="utf-8") == before
 
 
 def test_model_claiming_done_without_a_fix_does_not_complete(tmp_path: Path):

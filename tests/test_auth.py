@@ -28,6 +28,7 @@ def test_operator_account_can_log_in(client, app):
     me = client.get("/api/me")
     assert me.status_code == 200
     assert me.json()["username"] == "ada"
+    assert me.json()["provider"]["name"] == "deterministic"
     assert "password" not in me.json()
 
 

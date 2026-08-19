@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 
@@ -99,7 +100,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         if user is None or not verify_password(body.password, user.password_hash):
             raise HTTPException(status_code=401, detail={"error": "invalid username or password"})
         set_session(response, user)
-        return {"username": user.username}
+        return {"username": user.username, **_provider_public()}
 
     @app.post("/api/logout")
     def logout(request: Request, response: Response) -> dict:
@@ -109,10 +110,15 @@ def create_app(config: Config | None = None) -> FastAPI:
         response.delete_cookie(COOKIE, path="/")
         return {"ok": True}
 
+    def _provider_public() -> dict:
+        name = getattr(provider, "name", config.provider_name)
+        model = os.environ.get("HARNESS_MODEL") if name != "deterministic" else None
+        return {"provider": {"name": name, "model": model}}
+
     @app.get("/api/me")
     def me(request: Request) -> dict:
         user = current_user(request)
-        return {"username": user.username}
+        return {"username": user.username, **_provider_public()}
 
     @app.get("/api/repos")
     def repos(request: Request) -> dict:
