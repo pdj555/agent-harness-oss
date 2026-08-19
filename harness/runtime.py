@@ -169,7 +169,7 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                 status="completed",
                 result=result_text,
                 active_work="",
-                investigating="Verification passed with independent review.",
+                investigating="Checks passed. Independent review recorded.",
             )
             return
 

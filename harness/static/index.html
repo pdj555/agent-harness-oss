@@ -3,17 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Agent Harness</title>
+    <title>Harness</title>
     <link rel="stylesheet" href="/app.css">
   </head>
   <body>
-    <div class="grain" aria-hidden="true"></div>
-
     <section id="auth-gate" class="auth-gate" hidden>
       <div class="auth-card">
-        <p class="eyebrow">Local agent harness</p>
-        <h1>Prove the change.</h1>
-        <p class="lede">Sign in on this machine, pick an allowlisted repository, and give one software objective. The agent works in an isolated git worktree. Software decides whether it is done.</p>
+        <p class="brand-line">Harness</p>
+        <h1>Sign in</h1>
+        <p class="lede">Local accounts. Repositories are limited to the configured allowlist. Work runs in an isolated Git worktree.</p>
         <form id="auth-form">
           <label>Username <input id="auth-username" name="username" autocomplete="username" required minlength="3" maxlength="32"></label>
           <label>Password <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="8"></label>
@@ -29,11 +27,7 @@
     <div id="workspace" class="workspace" hidden>
       <aside class="rail" aria-label="Repositories and history">
         <div class="brand">
-          <span class="mark">AH</span>
-          <div>
-            <strong>Agent Harness</strong>
-            <small>Evidence over claims</small>
-          </div>
+          <strong>Harness</strong>
         </div>
         <div class="account-row">
           <span id="whoami"></span>
@@ -43,23 +37,22 @@
           Repository
           <select id="repo-select" aria-label="Repository"></select>
         </label>
-        <p class="utility">Recent runs</p>
+        <p class="utility">History</p>
         <div id="history-list" class="history"></div>
-        <p id="history-empty" class="quiet">No runs yet.</p>
+        <p id="history-empty" class="quiet">None yet.</p>
       </aside>
 
       <main class="stage">
         <header class="stage-head">
           <div>
-            <p class="eyebrow" id="run-status-label">Ready</p>
-            <h2 id="run-title">New objective</h2>
+            <p class="status" id="run-status-label">Ready</p>
+            <h2 id="run-title">New run</h2>
           </div>
           <button type="button" id="stop-button" class="danger" hidden>Stop</button>
         </header>
 
         <section id="empty-state" class="empty">
-          <h1>One objective. Isolated work. Real proof.</h1>
-          <p>The principal agent inspects the repository, edits in a git worktree, runs tests, and submits to an independent review. Completion is a software verdict, not a model saying “done.”</p>
+          <p>State an objective. The agent inspects the repository, edits in isolation, runs tests, and stops when software can verify the result.</p>
         </section>
 
         <section id="run-view" hidden>
@@ -68,12 +61,12 @@
             <p id="objective-text"></p>
           </article>
           <p class="lead-line"><span class="kicker">Investigating</span> <span id="investigating"></span></p>
-          <p class="lead-line muted"><span class="kicker">Active work</span> <span id="active-work"></span></p>
+          <p class="lead-line muted"><span class="kicker">Active</span> <span id="active-work"></span></p>
           <ol id="event-list" class="events"></ol>
           <section id="result-card" class="result" hidden>
             <h3 id="result-heading">Result</h3>
             <p id="result-text"></p>
-            <button type="button" id="publish-button" hidden>Publish verified delta</button>
+            <button type="button" id="publish-button" hidden>Apply to repository</button>
           </section>
           <section id="blocker-card" class="blockers" hidden>
             <h3>Blockers</h3>
@@ -83,7 +76,7 @@
 
         <form id="composer" class="composer">
           <label class="sr-only" for="objective">Objective</label>
-          <textarea id="objective" rows="3" maxlength="20000" required placeholder="Find the highest impact reliability problem, fix it, and prove the result."></textarea>
+          <textarea id="objective" rows="3" maxlength="20000" required placeholder="Find the highest-impact reliability problem, fix it, and prove the result."></textarea>
           <button type="submit" id="send-button">Run</button>
           <p id="composer-error" class="form-error" role="alert"></p>
         </form>
@@ -97,12 +90,12 @@
         </div>
         <section id="plan-view" class="panel-view">
           <ol id="plan-list" class="plan"></ol>
-          <p id="plan-empty" class="quiet">The plan appears once a run starts.</p>
+          <p id="plan-empty" class="quiet">No plan yet.</p>
         </section>
         <section id="changes-view" class="panel-view" hidden>
           <ul id="file-list" class="files"></ul>
           <pre id="diff-view" class="diff"></pre>
-          <p id="changes-empty" class="quiet">Changed files appear after edits in the worktree.</p>
+          <p id="changes-empty" class="quiet">No files changed.</p>
         </section>
         <section id="proof-view" class="panel-view" hidden>
           <h3>Checks <span id="check-badge" class="kicker"></span></h3>
@@ -111,7 +104,7 @@
           <h3>Review</h3>
           <p id="review-summary"></p>
           <ul id="review-findings" class="files"></ul>
-          <p id="proof-empty" class="quiet">Verification evidence is recorded by software, not by the model.</p>
+          <p id="proof-empty" class="quiet">Evidence is recorded after checks run.</p>
         </section>
       </aside>
     </div>

@@ -50,12 +50,9 @@ def run_review(stage: Stage, verification: Verification, provider: Provider) -> 
     findings = inspect_change(stage)
     passed = not findings
     if passed:
-        summary = (
-            "Independent review: isolated implementation change is present, "
-            "tests remain, and no blocking findings were recorded."
-        )
+        summary = "Implementation changed. Tests remain. No blocking findings."
     else:
-        summary = "Independent review blocked: " + "; ".join(findings)
+        summary = "Review blocked: " + "; ".join(findings)
     return {
         "role": "reviewer",
         "passed": passed,

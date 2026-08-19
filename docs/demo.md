@@ -44,9 +44,9 @@ submit one objective. Watch plan, events, changed files, checks, and proof.
 Press **Stop** to end an in-flight run.
 
 Without `auto_publish`, the verified edit stays in the worktree. The UI still
-shows the diff and evidence. Use **Publish verified delta** to copy the
-checked files into the selected repository. The canonical sample under
-`examples/` remains the failing fixture until you publish.
+shows the diff and evidence. Use **Apply to repository** to copy the checked
+files into the selected repository. The canonical sample under `examples/`
+remains the failing fixture until you apply.
 
 Verification is `python -m pytest -q` run in the stage with a filtered
 environment. The deterministic provider knows how to repair this sample; a

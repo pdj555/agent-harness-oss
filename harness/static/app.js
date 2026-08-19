@@ -225,7 +225,7 @@
     var resultCard = document.getElementById("result-card");
     if (run.result) {
       resultCard.hidden = false;
-      document.getElementById("result-heading").textContent = run.status === "completed" ? "Verified result" : "Result";
+      document.getElementById("result-heading").textContent = run.status === "completed" ? "Completed" : "Result";
       document.getElementById("result-text").textContent = run.result;
     } else {
       resultCard.hidden = true;
