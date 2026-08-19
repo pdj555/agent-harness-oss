@@ -10,7 +10,7 @@ browser  ->  auth  ->  app  ->  runtime  ->  provider
                               |          ->  isolation (worktree)
                               |          ->  verification (pytest)
                               |          ->  review
-                              '-----------> store (sqlite)
+                              '- - - - - ->  store (sqlite)
 ```
 
 ## Modules
