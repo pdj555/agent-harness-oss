@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,6 +11,34 @@ CSS = Path(__file__).resolve().parent.parent / "harness" / "static" / "app.css"
 
 def test_hidden_attribute_is_forced_in_css():
     assert "[hidden]" in CSS.read_text(encoding="utf-8")
+
+
+HARNESS = Path(__file__).resolve().parent / "login_workspace_harness.js"
+
+
+def test_login_json_reveals_workspace_without_a_followup_me_call():
+    node = shutil.which("node")
+    if not node:
+        raise AssertionError("node is required to verify the login workspace path")
+    proc = subprocess.run(
+        [node, str(HARNESS), str(JS)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["workspaceHidden"] is False
+    assert payload["authHidden"] is True
+    assert payload["workspaceVisibleClass"] is True
+    assert payload["authVisibleClass"] is False
+    assert payload["whoami"] == "ada"
+
+
+def test_workspace_stays_hidden_until_visible_class():
+    css = CSS.read_text(encoding="utf-8")
+    assert ".workspace.is-visible" in css
+    assert ".auth-gate.is-visible" in css
 
 
 def test_classic_script_executes_with_window_and_without_node_globals(tmp_path: Path):
@@ -34,6 +63,7 @@ globalThis.document = {
   getElementById: function () {
     return {
       hidden: false,
+      classList: { add: function () {}, remove: function () {}, contains: function () { return false; } },
       textContent: "",
       innerHTML: "",
       value: "",

@@ -31,13 +31,23 @@
 
   function showAuth() {
     authGate.hidden = false;
+    authGate.classList.add("is-visible");
     workspace.hidden = true;
+    workspace.classList.remove("is-visible");
   }
 
   function showWorkspace(username) {
     authGate.hidden = true;
+    authGate.classList.remove("is-visible");
     workspace.hidden = false;
-    whoami.textContent = username;
+    workspace.classList.add("is-visible");
+    whoami.textContent = username || "";
+  }
+
+  function enterWorkspace(username) {
+    showWorkspace(username);
+    loadRepos();
+    loadHistory();
   }
 
   function setAuthError(message) {
@@ -73,7 +83,7 @@
         setAuthError(body.error || "Could not authenticate");
         return;
       }
-      boot();
+      enterWorkspace(body.username);
     });
   }
 
@@ -130,23 +140,26 @@
     });
   });
 
+  function loadRepos() {
+    api("/api/repos").then(function (body) {
+      if (!body.ok) return;
+      repoSelect.innerHTML = "";
+      (body.repos || []).forEach(function (repo) {
+        var option = document.createElement("option");
+        option.value = repo.id;
+        option.textContent = repo.name;
+        repoSelect.appendChild(option);
+      });
+    });
+  }
+
   function boot() {
     api("/api/me").then(function (me) {
       if (!me.ok) {
         showAuth();
         return;
       }
-      showWorkspace(me.username);
-      return api("/api/repos").then(function (body) {
-        repoSelect.innerHTML = "";
-        (body.repos || []).forEach(function (repo) {
-          var option = document.createElement("option");
-          option.value = repo.id;
-          option.textContent = repo.name;
-          repoSelect.appendChild(option);
-        });
-        loadHistory();
-      });
+      enterWorkspace(me.username);
     });
   }
 
@@ -257,6 +270,13 @@
     else if (verification.passed === false) badge.textContent = "Failed";
     else badge.textContent = "";
     document.getElementById("review-summary").textContent = (run.review && run.review.summary) || "";
+    var findingsList = document.getElementById("review-findings");
+    findingsList.innerHTML = "";
+    ((run.review && run.review.findings) || []).forEach(function (finding) {
+      var item = document.createElement("li");
+      item.textContent = finding;
+      findingsList.appendChild(item);
+    });
     document.getElementById("proof-empty").hidden = !!(verification.output || (run.review && run.review.summary));
     var publishButton = document.getElementById("publish-button");
     publishButton.hidden = !(run.status === "completed" && verification.passed);

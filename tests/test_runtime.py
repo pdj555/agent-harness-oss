@@ -156,6 +156,36 @@ def test_independent_review_is_distinct_from_principal_done_text(tmp_path: Path)
     assert run.files_changed
 
 
+def test_green_pytest_without_implementation_change_is_not_completion(tmp_path: Path):
+    store, config, run_id = _setup(tmp_path)
+    original_tests = (config.workspace_roots[0] / "test_tracker.py").read_text(encoding="utf-8")
+    provider = ScriptedProvider(
+        [
+            Completion(
+                tool_calls=[
+                    ToolCall(
+                        name="edit_file",
+                        arguments={
+                            "path": "test_tracker.py",
+                            "old": original_tests,
+                            "new": "def test_ok():\n    assert True\n",
+                        },
+                    )
+                ]
+            ),
+            Completion(text="done: tests pass"),
+        ]
+    )
+    execute_run(run_id, store=store, config=config, provider=provider)
+    run = store.get_run(run_id)
+    assert run.verification is not None
+    assert run.verification["passed"] is True
+    assert run.review is not None
+    assert run.review["passed"] is False
+    assert run.review["passed"] is not run.verification["passed"]
+    assert run.status == "failed"
+
+
 def test_failed_check_is_a_failure_state_not_completion(tmp_path: Path):
     store, config, run_id = _setup(tmp_path)
     provider = ScriptedProvider(

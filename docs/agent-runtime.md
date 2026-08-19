@@ -36,10 +36,16 @@ The user never manages that helper.
 
 ## Independent review
 
-`harness.review.run_review` always writes `role: "reviewer"`. The summary is
-produced for the review step, not copied from the principal's final message.
-Review cannot override software checks: if pytest failed, the run cannot
-complete. The reviewer record is a second look at the same evidence.
+`harness.review.run_review` always writes `role: "reviewer"`. Its `passed`
+flag is computed from the isolated diff, not from pytest's exit code:
+
+- tests must still exist in the stage
+- there must be an isolated change
+- tests may not change unless an implementation file also changed
+
+Completion requires **both** `verification.passed` and `review.passed`. Green
+checks with no implementation change do not complete. The review summary is
+never the principal's "done" text.
 
 ## Stop
 

@@ -1,54 +1,66 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from harness.isolation import Stage
 from harness.provider import Provider
-from harness.tools import tool_specs
 from harness.verification import Verification
 
-REVIEWER_SUMMARY_PASSED = (
-    "Independent review: checks passed and the isolated diff is consistent with the tests."
-)
-REVIEWER_SUMMARY_FAILED = "Independent review: checks failed; the run is not complete."
+TEST_DIR_NAMES = {"tests", "test"}
+
+
+def _is_test_path(rel: str) -> bool:
+    path = Path(rel)
+    name = path.name
+    if name.startswith("test_") or name.endswith("_test.py"):
+        return True
+    return any(part in TEST_DIR_NAMES for part in path.parts)
+
+
+def _test_files(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for path in root.rglob("*.py"):
+        rel = path.relative_to(root)
+        if any(part in {".git", ".harness", "__pycache__"} for part in rel.parts):
+            continue
+        if _is_test_path(str(rel)):
+            found.append(path)
+    return found
+
+
+def inspect_change(stage: Stage) -> list[str]:
+    files = stage.changed_files()
+    diff = (stage.diff() or "").strip()
+    findings: list[str] = []
+    if not _test_files(stage.root):
+        findings.append("no test files remain in the isolated worktree")
+    impl_changed = [name for name in files if not _is_test_path(name)]
+    tests_changed = [name for name in files if _is_test_path(name)]
+    if not files and not diff:
+        findings.append("review found no isolated change")
+    if tests_changed and not impl_changed:
+        findings.append("tests changed without an implementation change")
+    return findings
 
 
 def run_review(stage: Stage, verification: Verification, provider: Provider) -> dict:
-    diff = stage.diff()
+    """Software-gated review. Check results are context, not the verdict."""
+    del provider
     files = stage.changed_files()
-    summary = REVIEWER_SUMMARY_PASSED if verification.passed else REVIEWER_SUMMARY_FAILED
-    try:
-        completion = provider.complete(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an independent reviewer. You cannot edit files. "
-                        "Comment on the diff and checks only."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"verification_passed={verification.passed}\n"
-                        f"files={files}\n"
-                        f"diff:\n{diff[:6000]}\n"
-                        f"checks:\n{verification.output[-2000:]}"
-                    ),
-                },
-            ],
-            tool_specs("reviewer"),
+    findings = inspect_change(stage)
+    passed = not findings
+    if passed:
+        summary = (
+            "Independent review: isolated implementation change is present, "
+            "tests remain, and no blocking findings were recorded."
         )
-        text = (completion.text or "").strip()
-        if text and "Principal sign-off" not in text:
-            if text.lower().startswith("independent review"):
-                summary = text[:1000]
-            else:
-                summary = f"Independent review: {text[:1000]}"
-    except Exception:
-        pass
+    else:
+        summary = "Independent review blocked: " + "; ".join(findings)
     return {
         "role": "reviewer",
-        "passed": bool(verification.passed),
+        "passed": passed,
         "summary": summary,
-        "findings": [] if verification.passed else ["checks failed"],
+        "findings": findings,
         "files_reviewed": files,
+        "checks_passed": bool(verification.passed),
     }
