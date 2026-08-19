@@ -4,9 +4,11 @@ import argparse
 import sys
 from pathlib import Path
 
+from harness.accounts import create_account
 from harness.app import create_app
 from harness.config import load_config
 from harness.demo import run_demo
+from harness.store import Store
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,9 +24,27 @@ def main(argv: list[str] | None = None) -> int:
         "--objective",
         default="Find the highest impact reliability problem, fix it, and prove the result.",
     )
+    users = sub.add_parser("user", help="operator account tools")
+    user_sub = users.add_subparsers(dest="user_command")
+    add_user = user_sub.add_parser("add", help="create a local account")
+    add_user.add_argument("username")
+    add_user.add_argument("--password", required=True)
     args = parser.parse_args(argv)
     config = load_config(args.config)
     command = args.command or "serve"
+    if command == "user":
+        if args.user_command != "add":
+            parser.error("user command required")
+        config.data_dir.mkdir(parents=True, exist_ok=True)
+        store = Store(config.data_dir / "harness.db")
+        store.initialize()
+        try:
+            user = create_account(store, args.username, args.password)
+        except ValueError as exc:
+            print(exc)
+            return 1
+        print(f"created {user.username}")
+        return 0
     if command == "demo":
         result = run_demo(config, objective=args.objective)
         print(f"status: {result.status}")

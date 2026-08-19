@@ -7,11 +7,11 @@ from tests.conftest import signup
 
 
 def test_signup_login_protected_logout_denied(client):
-    created = client.post(
+    refused = client.post(
         "/api/signup", json={"username": "ada", "password": "correct-horse"}
     )
-    assert created.status_code == 201
-    assert created.json()["username"] == "ada"
+    assert refused.status_code == 403
+    signup(client, "ada", "correct-horse")
     client.cookies.clear()
     login = client.post(
         "/api/login", json={"username": "ada", "password": "correct-horse"}

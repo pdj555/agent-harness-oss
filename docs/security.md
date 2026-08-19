@@ -14,7 +14,9 @@
 
 ## Authentication
 
-- Sign up stores `scrypt$<salt>$<digest>`.
+- The browser cannot create accounts. `POST /api/signup` is refused.
+  Request access by email, then the operator runs `harness user add`.
+- Passwords are stored as `scrypt$<salt>$<digest>`.
 - Login verifies with `hmac.compare_digest`.
 - Logout deletes the hashed session and the cookie.
 - `/api/me`, `/api/repos`, `/api/runs` require a valid session. Bodies on 401

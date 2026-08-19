@@ -7,13 +7,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from harness.auth import (
-    hash_password,
-    new_session_token,
-    validate_password,
-    validate_username,
-    verify_password,
-)
+from harness.auth import new_session_token, verify_password
 from harness.config import Config, load_config
 from harness.isolation import Stage
 from harness.provider import get_provider
@@ -90,18 +84,14 @@ def create_app(config: Config | None = None) -> FastAPI:
     def app_css() -> FileResponse:
         return FileResponse(STATIC / "app.css", media_type="text/css")
 
-    @app.post("/api/signup", status_code=201)
-    def signup(body: Credentials, response: Response) -> dict:
-        try:
-            username = validate_username(body.username)
-            password = validate_password(body.password)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
-        if store.get_user_by_username(username):
-            raise HTTPException(status_code=409, detail={"error": "username already taken"})
-        user = store.create_user(username, hash_password(password))
-        set_session(response, user)
-        return {"username": user.username}
+    @app.post("/api/signup")
+    def signup() -> dict:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "accounts are not created in the browser; request access by email"
+            },
+        )
 
     @app.post("/api/login")
     def login(body: Credentials, response: Response) -> dict:

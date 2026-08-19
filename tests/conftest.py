@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from harness.accounts import create_account
 from harness.app import create_app
 from harness.config import Config
 from tests.helpers import copy_sample, git_init
@@ -40,5 +41,6 @@ def client(app) -> TestClient:
 
 
 def signup(client: TestClient, username: str = "ada", password: str = "correct-horse") -> None:
-    response = client.post("/api/signup", json={"username": username, "password": password})
-    assert response.status_code == 201, response.text
+    create_account(client.app.state.store, username, password)
+    response = client.post("/api/login", json={"username": username, "password": password})
+    assert response.status_code == 200, response.text
