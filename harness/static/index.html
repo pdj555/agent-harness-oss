@@ -54,7 +54,8 @@
         </header>
 
         <section id="empty-state" class="empty">
-          <p>State an objective. The agent inspects the repository, edits in isolation, runs tests, and stops when software can verify the result.</p>
+          <p>Name the outcome that makes money. The agent works in an isolated worktree and applies nothing until checks pass.</p>
+          <p id="live-hint" class="quiet">This session is the scripted sample agent. Export XAI_API_KEY and restart to run a live model against a real repository.</p>
         </section>
 
         <section id="run-view" hidden>
@@ -78,7 +79,7 @@
 
         <form id="composer" class="composer">
           <label class="sr-only" for="objective">Objective</label>
-          <textarea id="objective" rows="3" maxlength="20000" required placeholder="Find the highest-impact reliability problem, fix it, and prove the result."></textarea>
+          <textarea id="objective" rows="3" maxlength="20000" required placeholder="Ship the change that most increases revenue or stops a loss, and prove it."></textarea>
           <button type="submit" id="send-button">Run</button>
           <p id="composer-error" class="form-error" role="alert"></p>
         </form>

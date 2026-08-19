@@ -112,7 +112,14 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     def _provider_public() -> dict:
         name = getattr(provider, "name", config.provider_name)
-        model = os.environ.get("HARNESS_MODEL") if name != "deterministic" else None
+        model = None
+        if name != "deterministic":
+            try:
+                from harness.provider import live_endpoint
+
+                model = live_endpoint()[2]
+            except RuntimeError:
+                model = os.environ.get("HARNESS_MODEL")
         return {"provider": {"name": name, "model": model}}
 
     @app.get("/api/me")

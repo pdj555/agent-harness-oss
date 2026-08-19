@@ -6,7 +6,7 @@ from pathlib import Path
 
 from harness.accounts import create_account
 from harness.app import create_app
-from harness.config import load_config
+from harness.config import add_extra_root, load_config
 from harness.demo import run_demo
 from harness.store import Store
 
@@ -29,9 +29,13 @@ def main(argv: list[str] | None = None) -> int:
     add_user = user_sub.add_parser("add", help="create a local account")
     add_user.add_argument("username")
     add_user.add_argument("--password", required=True)
+    repos = sub.add_parser("repo", help="allowlisted repositories")
+    repo_sub = repos.add_subparsers(dest="repo_command")
+    add_repo = repo_sub.add_parser("add", help="allow a local git repository")
+    add_repo.add_argument("path", type=Path)
     args = parser.parse_args(argv)
-    config = load_config(args.config)
     command = args.command or "serve"
+    config = load_config(args.config, prefer_live=command != "demo")
     if command == "user":
         if args.user_command != "add":
             parser.error("user command required")
@@ -44,6 +48,16 @@ def main(argv: list[str] | None = None) -> int:
             print(exc)
             return 1
         print(f"created {user.username}")
+        return 0
+    if command == "repo":
+        if args.repo_command != "add":
+            parser.error("repo command required")
+        try:
+            root = add_extra_root(config.data_dir, args.path)
+        except ValueError as exc:
+            print(exc)
+            return 1
+        print(root)
         return 0
     if command == "demo":
         result = run_demo(config, objective=args.objective)

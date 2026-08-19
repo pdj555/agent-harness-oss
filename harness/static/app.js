@@ -37,12 +37,14 @@
 
   function showProvider(info) {
     var label = document.getElementById("provider-label");
+    var hint = document.getElementById("live-hint");
     if (!label) return;
     if (!info || !info.name) {
       label.textContent = "";
       return;
     }
     label.textContent = info.model ? info.name + " · " + info.model : info.name;
+    if (hint) hint.hidden = info.name !== "deterministic";
   }
 
   function showWorkspace(username) {

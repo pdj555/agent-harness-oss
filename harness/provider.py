@@ -120,12 +120,9 @@ class OpenAICompatProvider:
         }
 
     def complete(self, messages: list[dict], tools: list[dict]) -> Completion:
-        api_key = os.environ.get("HARNESS_API_KEY")
-        if not api_key:
-            raise RuntimeError("HARNESS_API_KEY is not set")
-        base = os.environ.get("HARNESS_API_BASE", "https://api.openai.com/v1").rstrip("/")
-        model = os.environ.get("HARNESS_MODEL", "gpt-4.1-mini")
+        api_key, base, model = live_endpoint()
         payload = self.build_payload(messages, tools, model)
+        payload["tool_choice"] = "auto"
         request = urllib.request.Request(
             f"{base}/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
@@ -157,6 +154,24 @@ class OpenAICompatProvider:
                 )
             )
         return Completion(text=message.get("content") or "", tool_calls=calls)
+
+
+def live_endpoint() -> tuple[str, str, str]:
+    """Return (api_key, base_url, model) for a live vendor."""
+    if os.environ.get("XAI_API_KEY"):
+        return (
+            os.environ["XAI_API_KEY"],
+            os.environ.get("HARNESS_API_BASE", "https://api.x.ai/v1").rstrip("/"),
+            os.environ.get("HARNESS_MODEL", "grok-4-fast"),
+        )
+    key = os.environ.get("HARNESS_API_KEY")
+    if key:
+        return (
+            key,
+            os.environ.get("HARNESS_API_BASE", "https://api.openai.com/v1").rstrip("/"),
+            os.environ.get("HARNESS_MODEL", "gpt-4.1-mini"),
+        )
+    raise RuntimeError("set XAI_API_KEY or HARNESS_API_KEY for a live model")
 
 
 def get_provider(name: str) -> Provider:

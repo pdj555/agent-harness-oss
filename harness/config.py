@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -8,6 +9,14 @@ from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SAMPLE = PACKAGE_ROOT / "examples" / "sample-repo"
+
+
+def _load_dotenv() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv()
 
 
 @dataclass
@@ -23,7 +32,50 @@ class Config:
     provider_instance: Any = None
 
 
-def load_config(path: Path | None = None) -> Config:
+def has_live_key() -> bool:
+    return bool(os.environ.get("XAI_API_KEY") or os.environ.get("HARNESS_API_KEY"))
+
+
+def extra_repos_path(data_dir: Path) -> Path:
+    return data_dir / "repos.json"
+
+
+def load_extra_roots(data_dir: Path) -> list[Path]:
+    path = extra_repos_path(data_dir)
+    if not path.is_file():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    roots: list[Path] = []
+    if not isinstance(raw, list):
+        return []
+    for item in raw:
+        candidate = Path(str(item)).expanduser()
+        if candidate.is_dir():
+            roots.append(candidate.resolve())
+    return roots
+
+
+def add_extra_root(data_dir: Path, root: Path) -> Path:
+    root = root.expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"not a directory: {root}")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    roots = load_extra_roots(data_dir)
+    resolved = [path.resolve() for path in roots]
+    if root not in resolved:
+        roots.append(root)
+        extra_repos_path(data_dir).write_text(
+            json.dumps([str(path) for path in roots], indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return root
+
+
+def load_config(path: Path | None = None, *, prefer_live: bool = True) -> Config:
+    _load_dotenv()
     config = Config(workspace_roots=[DEFAULT_SAMPLE] if DEFAULT_SAMPLE.is_dir() else [])
     candidate = path or Path("harness.toml")
     if candidate.is_file():
@@ -45,9 +97,17 @@ def load_config(path: Path | None = None) -> Config:
     env_provider = os.environ.get("HARNESS_PROVIDER")
     if env_provider:
         config.provider_name = env_provider
+    elif prefer_live and config.provider_name == "deterministic" and has_live_key():
+        config.provider_name = "openai_compat"
     config.data_dir = config.data_dir.expanduser()
     if not config.data_dir.is_absolute():
         config.data_dir = Path.cwd() / config.data_dir
+    extras = load_extra_roots(config.data_dir)
+    seen = {path.resolve() for path in config.workspace_roots}
+    for root in extras:
+        if root.resolve() not in seen:
+            config.workspace_roots.append(root)
+            seen.add(root.resolve())
     return config
 
 

@@ -9,9 +9,9 @@ port = 7465
 roots = ["examples/sample-repo"]
 
 [provider]
-# "deterministic" runs the demo and tests without a paid vendor.
-# "openai_compat" uses HARNESS_API_KEY, HARNESS_API_BASE, and HARNESS_MODEL.
-name = "deterministic"
+# Serve uses a live model when XAI_API_KEY (or HARNESS_API_KEY) is set.
+# "deterministic" is for `harness demo` and tests only.
+# name = "openai_compat"
 
 [data]
 dir = ".harness"
