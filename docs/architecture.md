@@ -6,11 +6,11 @@ exists to give that agent authority, isolation, and proof.
 
 ```text
 browser  ->  auth  ->  app  ->  runtime  ->  provider
-                              |           ->  tools (authority)
-                              |           ->  isolation (worktree)
-                              |           ->  verification (pytest)
-                              |           ->  review
-                              '-> store (sqlite)
+                              |          ->  tools (authority)
+                              |          ->  isolation (worktree)
+                              |          ->  verification (pytest)
+                              |          ->  review
+                              '-----------> store (sqlite)
 ```
 
 ## Modules
@@ -47,7 +47,9 @@ The web client never sends raw paths. It sends a `repo_id` from
 Mutating work happens in a stage directory under `.harness/stages/<run_id>/`.
 A selected path is treated as Git only when `git rev-parse --show-toplevel`
 equals that path. Nested folders inside some other clone are copied, not
-attached to the parent worktree. If the path is a Git root, the stage is a
+attached to the parent worktree. `ensure_git_repo` uses the same root check,
+so a stage under `.harness/` still gets its own repository and a real diff
+even when that directory sits inside another clone. If the path is a Git root, the stage is a
 detached Git worktree. Otherwise the files are copied and initialized as Git
 inside the stage so diff and status still work. The source tree is unchanged
 until `Stage.publish()` copies the verified delta. The web UI exposes publish

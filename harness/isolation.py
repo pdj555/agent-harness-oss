@@ -38,8 +38,7 @@ def _is_git_root(path: Path) -> bool:
 
 
 def ensure_git_repo(path: Path) -> None:
-    probe = _git(["rev-parse", "--is-inside-work-tree"], path)
-    if probe.returncode == 0:
+    if _is_git_root(path):
         return
     init = _git(["init"], path)
     if init.returncode != 0:
