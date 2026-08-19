@@ -3,7 +3,6 @@
   var workspace = document.getElementById("workspace");
   var authForm = document.getElementById("auth-form");
   var authError = document.getElementById("auth-error");
-  var signupButton = document.getElementById("signup-button");
   var logoutButton = document.getElementById("logout-button");
   var whoami = document.getElementById("whoami");
   var repoSelect = document.getElementById("repo-select");
@@ -57,9 +56,6 @@
   authForm.addEventListener("submit", function (event) {
     event.preventDefault();
     submitAuth("/api/login");
-  });
-  signupButton.addEventListener("click", function () {
-    submitAuth("/api/signup");
   });
   logoutButton.addEventListener("click", function () {
     api("/api/logout", { method: "POST" }).then(function () {

@@ -35,6 +35,16 @@ def test_login_json_reveals_workspace_without_a_followup_me_call():
     assert payload["whoami"] == "ada"
 
 
+def test_account_request_is_mailto_not_self_serve_signup():
+    html = Path(__file__).resolve().parent.parent.joinpath("harness/static/index.html").read_text(
+        encoding="utf-8"
+    )
+    js = JS.read_text(encoding="utf-8")
+    assert "mailto:preston@pallara.xyz" in html
+    assert "Harness account request" in html.replace("%20", " ")
+    assert "/api/signup" not in js
+
+
 def test_workspace_stays_hidden_until_visible_class():
     css = CSS.read_text(encoding="utf-8")
     assert ".workspace.is-visible" in css
