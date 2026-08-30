@@ -11,6 +11,8 @@ roots = ["examples/sample-repo"]
 [provider]
 # Serve uses a live model when Ollama is running or OPENAI_API_KEY / XAI_API_KEY
 # is set. Pin GPT-5.6 Luna with HARNESS_PROVIDER=openai and OPENAI_API_KEY.
+# Both HARNESS_PROVIDER and provider.name accept these pins:
+# openai, ollama, ollama-cloud, xai.
 # "deterministic" is for `harness demo` and tests only.
 # name = "openai_compat"
 

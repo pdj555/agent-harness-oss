@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SAMPLE = PACKAGE_ROOT / "examples" / "sample-repo"
+SOURCE_SAMPLE = PACKAGE_ROOT / "examples" / "sample-repo"
+PACKAGED_SAMPLE = Path(__file__).resolve().parent / "sample-repo"
+DEFAULT_SAMPLE = SOURCE_SAMPLE if SOURCE_SAMPLE.is_dir() else PACKAGED_SAMPLE
 
 
 def _load_dotenv() -> None:

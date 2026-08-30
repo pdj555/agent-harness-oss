@@ -128,6 +128,11 @@ def reasoning_effort_for(model: str) -> str | None:
 class OpenAICompatProvider:
     name = "openai_compat"
 
+    def __init__(self, selection: str | None = None) -> None:
+        self.selection = selection
+        if selection:
+            self.name = selection
+
     @staticmethod
     def build_payload(messages: list[dict], tools: list[dict], model: str) -> dict:
         payload = {
@@ -206,7 +211,7 @@ class OpenAICompatProvider:
         return payload
 
     def complete(self, messages: list[dict], tools: list[dict]) -> Completion:
-        api_key, base, model = live_endpoint()
+        api_key, base, model = live_endpoint(self.selection)
         if model.lower().startswith("gpt-5") and "openai.com" in base:
             payload = self.build_responses_payload(messages, tools, model)
             body = _post_json(f"{base}/responses", payload, api_key, timeout=600)
@@ -325,28 +330,54 @@ def _is_openai_model(model: str | None) -> bool:
     return name.startswith("gpt-5") or name.startswith("gpt-4")
 
 
-def live_endpoint() -> tuple[str, str, str]:
+def live_endpoint(provider_name: str | None = None) -> tuple[str, str, str]:
     """Return (api_key, base_url, model) for a live vendor."""
-    provider = (os.environ.get("HARNESS_PROVIDER") or "").lower()
+    provider = (provider_name or os.environ.get("HARNESS_PROVIDER") or "").lower()
     explicit_model = os.environ.get("HARNESS_MODEL")
     openai_key = _openai_key()
     openai_base = os.environ.get("HARNESS_API_BASE", "https://api.openai.com/v1").rstrip("/")
-    if openai_key and (provider == "openai" or _is_openai_model(explicit_model)):
+    if provider == "openai":
+        if not openai_key:
+            raise RuntimeError("HARNESS_PROVIDER=openai requires OPENAI_API_KEY or HARNESS_API_KEY")
         return openai_key, openai_base, explicit_model or "gpt-5.6-luna"
-    if os.environ.get("OLLAMA_API_KEY") and provider != "ollama":
+    if provider == "ollama-cloud":
+        if not os.environ.get("OLLAMA_API_KEY"):
+            raise RuntimeError("HARNESS_PROVIDER=ollama-cloud requires OLLAMA_API_KEY")
         return (
             os.environ["OLLAMA_API_KEY"],
             os.environ.get("HARNESS_API_BASE", "https://ollama.com/v1").rstrip("/"),
             explicit_model or "gpt-oss:120b",
         )
-    if ollama_available() and provider not in {"openai", "xai", "ollama-cloud"}:
+    if provider == "ollama":
+        if not ollama_available():
+            raise RuntimeError("HARNESS_PROVIDER=ollama requires a running local Ollama server")
+        model = pick_ollama_model(ollama_models())
+        return "ollama", ollama_host() + "/v1", model
+    if provider == "xai":
+        if not os.environ.get("XAI_API_KEY"):
+            raise RuntimeError("HARNESS_PROVIDER=xai requires XAI_API_KEY")
+        return (
+            os.environ["XAI_API_KEY"],
+            os.environ.get("HARNESS_API_BASE", "https://api.x.ai/v1").rstrip("/"),
+            explicit_model or "grok-4.6",
+        )
+
+    if openai_key and _is_openai_model(explicit_model):
+        return openai_key, openai_base, explicit_model or "gpt-5.6-luna"
+    if os.environ.get("OLLAMA_API_KEY"):
+        return (
+            os.environ["OLLAMA_API_KEY"],
+            os.environ.get("HARNESS_API_BASE", "https://ollama.com/v1").rstrip("/"),
+            explicit_model or "gpt-oss:120b",
+        )
+    if ollama_available():
         model = pick_ollama_model(ollama_models())
         return "ollama", ollama_host() + "/v1", model
     if os.environ.get("XAI_API_KEY"):
         return (
             os.environ["XAI_API_KEY"],
             os.environ.get("HARNESS_API_BASE", "https://api.x.ai/v1").rstrip("/"),
-            explicit_model or "grok-4-fast",
+            explicit_model or "grok-4.6",
         )
     if openai_key:
         return openai_key, openai_base, explicit_model or "gpt-5.6-luna"
@@ -358,11 +389,14 @@ def get_provider(name: str) -> Provider:
         return DeterministicProvider()
     if name == "scripted":
         return ScriptedProvider([])
-    if name in {"openai_compat", "openai", "ollama", "ollama-cloud"}:
-        provider = OpenAICompatProvider()
+    if name in {"openai_compat", "openai", "ollama", "ollama-cloud", "xai"}:
+        selection = None if name == "openai_compat" else name
+        provider = OpenAICompatProvider(selection)
         try:
-            key, base, _model = live_endpoint()
+            key, base, _model = live_endpoint(selection)
         except RuntimeError:
+            return provider
+        if selection:
             return provider
         if "ollama.com" in base:
             provider.name = "ollama-cloud"
@@ -427,7 +461,7 @@ def _shell_passed(content: str) -> bool:
 
 def _openai_messages(messages: list[dict]) -> list[dict]:
     secrets = []
-    for name in ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"):
+    for name in ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "OLLAMA_API_KEY"):
         value = os.environ.get(name)
         if value:
             secrets.append(value)
@@ -438,21 +472,26 @@ def _openai_messages(messages: list[dict]) -> list[dict]:
         for key in secrets:
             content = content.replace(key, "[redacted]")
         if role == "assistant" and message.get("tool_calls"):
+            calls = []
+            for call in message.get("tool_calls") or []:
+                arguments = json.dumps(call.get("arguments") or {})
+                for key in secrets:
+                    arguments = arguments.replace(key, "[redacted]")
+                calls.append(
+                    {
+                        "id": call.get("id") or "call",
+                        "type": "function",
+                        "function": {
+                            "name": call.get("name"),
+                            "arguments": arguments,
+                        },
+                    }
+                )
             clean.append(
                 {
                     "role": "assistant",
                     "content": content or None,
-                    "tool_calls": [
-                        {
-                            "id": call.get("id") or "call",
-                            "type": "function",
-                            "function": {
-                                "name": call.get("name"),
-                                "arguments": json.dumps(call.get("arguments") or {}),
-                            },
-                        }
-                        for call in message.get("tool_calls") or []
-                    ],
+                    "tool_calls": calls,
                 }
             )
         elif role == "tool":

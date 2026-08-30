@@ -33,6 +33,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["harness"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"examples/sample-repo/README.md" = "harness/sample-repo/README.md"
+"examples/sample-repo/test_tracker.py" = "harness/sample-repo/test_tracker.py"
+"examples/sample-repo/tracker.py" = "harness/sample-repo/tracker.py"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
