@@ -12,6 +12,13 @@
 | Source repository | Read-only until a verified publish. |
 | Environment | Holds API keys. Stripped from tool subprocesses and redacted from events. |
 
+Git stages overlay tracked and nonignored untracked files only. Ignored local
+credentials and dependency trees do not enter the agent worktree. The non-Git
+copy fallback excludes credential-like env files, dependency directories,
+caches, and harness state. A tracked or unignored `.env`, `.env.local`, or
+similar credential file makes Git staging fail closed; `.env.example`,
+`.env.sample`, and `.env.template` are allowed.
+
 ## Authentication
 
 - The browser cannot create accounts. `POST /api/signup` is refused.

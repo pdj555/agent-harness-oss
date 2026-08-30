@@ -55,6 +55,14 @@ inside the stage so diff and status still work. The source tree is unchanged
 until `Stage.publish()` copies the verified delta. The web UI exposes publish
 as an explicit step after verification.
 
+For a Git root, the working-tree overlay comes from `git ls-files`: tracked
+files plus nonignored untracked files. Ignored credentials, dependency trees,
+and generated data are not copied into the stage. The copy fallback also
+excludes credential-like env files, dependency directories, and harness state.
+If a Git repository tracks or leaves an env credential file unignored, staging
+fails with one action: add that file to `.gitignore`. Example, sample, and
+template env files remain available.
+
 ## Verification
 
 When the model stops proposing tool calls, the runtime runs
