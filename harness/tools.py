@@ -14,7 +14,7 @@ from harness.authority import (
     allow_tool,
     resolve_in_root,
 )
-from harness.isolation import Stage
+from harness.isolation import IsolationError, Stage
 
 SKIP_DIRS = {".git", ".harness", "__pycache__", ".pytest_cache", "node_modules"}
 
@@ -35,6 +35,7 @@ def execute(
     allow_tool(role, name)
     if stopped and name in MUTATING_TOOLS:
         raise ToolError("stop was requested; mutating work is not allowed")
+    _assert_stage_safe(stage)
     args = arguments or {}
     if name == "list_files":
         return _list_files(stage.root, str(args.get("pattern") or "*"))
@@ -48,7 +49,9 @@ def execute(
     if name == "edit_file":
         return _edit_file(stage.root, args)
     if name == "run_shell":
-        return _run_shell(stage.root, str(args.get("command") or ""))
+        output = _run_shell(stage.root, str(args.get("command") or ""))
+        _assert_stage_safe(stage)
+        return output
     if name == "git_status":
         return _git(["status", "--short"], stage.root)
     if name == "git_diff":
@@ -63,6 +66,13 @@ def execute(
             raise ToolError("set_plan requires a non-empty steps list")
         return "plan recorded: " + " | ".join(str(step) for step in steps[:12])
     raise ToolError(f"unknown tool: {name}")
+
+
+def _assert_stage_safe(stage: Stage) -> None:
+    try:
+        stage.assert_safe()
+    except IsolationError as exc:
+        raise ToolError(str(exc)) from exc
 
 
 TOOL_PARAMETERS = {

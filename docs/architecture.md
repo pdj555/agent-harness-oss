@@ -70,6 +70,10 @@ When the model stops proposing tool calls, the runtime runs
 filtered environment. The boolean `passed` comes from the process exit code.
 There is no parameter for a model claim.
 
+The runtime validates stage safety before verification, independent review,
+and publishing. If an escaping symlink is detected, it records a failed run
+and disables the stored stage reference instead of continuing the pipeline.
+
 Completion also requires an independent review record (`role: reviewer`) whose
 summary is not the principal's final text.
 

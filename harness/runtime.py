@@ -150,6 +150,8 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         if current.stop_requested:
             store.update_run(run_id, status="stopped", result="Stopped by the user.")
             return
+        if not _require_safe_stage(store, run_id, stage, "continuing the run"):
+            return
 
         try:
             completion = provider.complete(messages, tools)
@@ -214,8 +216,12 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                             "content": detail,
                         }
                     )
+                    if not _require_safe_stage(store, run_id, stage, "continuing after a tool call"):
+                        return
             continue
 
+        if not _require_safe_stage(store, run_id, stage, "verification"):
+            return
         store.update_run(run_id, active_work="Running verification.")
         evidence = run_checks(stage.root)
         files = stage.changed_files()
@@ -232,13 +238,21 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
             "evidence",
             f"verification passed={evidence.passed} exit={evidence.exit_code}",
         )
+        if not _require_safe_stage(store, run_id, stage, "independent review"):
+            return
         review = run_review(stage, evidence, provider)
         store.update_run(run_id, review=review)
         store.add_event(run_id, "decision", review["summary"])
 
         if evidence.passed and review.get("passed"):
             if config.auto_publish:
-                stage.publish()
+                if not _require_safe_stage(store, run_id, stage, "publish"):
+                    return
+                try:
+                    stage.publish()
+                except IsolationError as exc:
+                    _fail_unsafe_stage(store, run_id, "publish", exc)
+                    return
                 store.add_event(run_id, "result", "Published verified files into the selected repository.")
             result_text = (
                 completion.text.strip()
@@ -280,6 +294,32 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         status="failed",
         result="Reached the step limit without verification evidence.",
         blockers=["step limit"],
+    )
+
+
+def _require_safe_stage(store: Store, run_id: str, stage, phase: str) -> bool:
+    try:
+        stage.assert_safe()
+    except IsolationError as exc:
+        _fail_unsafe_stage(store, run_id, phase, exc)
+        return False
+    return True
+
+
+def _fail_unsafe_stage(store: Store, run_id: str, phase: str, exc: IsolationError) -> None:
+    store.add_event(run_id, "decision", f"Stage safety check failed before {phase}: {exc}")
+    current = store.get_run(run_id)
+    blockers = list(current.blockers) if current else []
+    if "unsafe stage" not in blockers:
+        blockers.append("unsafe stage")
+    store.update_run(
+        run_id,
+        status="failed",
+        result="Run stopped because the isolated stage failed safety checks.",
+        blockers=blockers,
+        active_work="",
+        investigating="",
+        stage_path=None,
     )
 
 
