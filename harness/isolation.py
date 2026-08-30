@@ -11,6 +11,11 @@ class IsolationError(Exception):
     pass
 
 
+COPY_SKIP_DIRS = {".git", ".harness", ".venv", "__pycache__", ".pytest_cache", "node_modules"}
+COPY_SKIP_FILES = {".env"}
+SAFE_ENV_SUFFIXES = {"example", "sample", "template"}
+
+
 def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
@@ -66,34 +71,98 @@ def create_stage(source: Path, stages_dir: Path, run_id: str) -> Stage:
         raise IsolationError("repository path does not exist")
     stages_dir.mkdir(parents=True, exist_ok=True)
     root = (stages_dir / run_id).resolve()
-    if root.exists():
+    is_git_root = _is_git_root(source)
+    if is_git_root:
+        _remove_worktree(source, root)
+    elif root.exists():
         shutil.rmtree(root)
-    if _is_git_root(source):
+    if is_git_root:
         added = _git(["worktree", "add", "--detach", str(root)], source)
         if added.returncode != 0:
             raise IsolationError(added.stderr.strip() or "git worktree add failed")
-        _overlay_working_tree(source, root)
+        try:
+            _overlay_working_tree(source, root)
+            _assert_symlinks_stay_in_stage(root)
+        except Exception:
+            _remove_worktree(source, root)
+            raise
         return Stage(id=run_id, source=source, root=root)
-    shutil.copytree(
-        source,
-        root,
-        ignore=shutil.ignore_patterns(".harness", "__pycache__", ".pytest_cache", ".git"),
-    )
+    try:
+        shutil.copytree(
+            source,
+            root,
+            ignore=_copy_ignores,
+            symlinks=True,
+        )
+        _assert_symlinks_stay_in_stage(root)
+    except Exception:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
     ensure_git_repo(root)
     return Stage(id=run_id, source=source, root=root)
 
 
 def _overlay_working_tree(source: Path, root: Path) -> None:
-    skip = {".git", ".harness", "__pycache__", ".pytest_cache"}
-    for path in source.rglob("*"):
-        if any(part in skip for part in path.parts):
+    listed = _git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], source)
+    if listed.returncode != 0:
+        raise IsolationError(listed.stderr.strip() or "git ls-files failed")
+    for raw in listed.stdout.split("\0"):
+        if not raw:
             continue
-        if not path.is_file():
-            continue
-        rel = path.relative_to(source)
+        rel = Path(raw)
+        if _is_sensitive_env_file(rel):
+            raise IsolationError(
+                f"refusing to stage credential-like file: {rel}; add it to .gitignore"
+            )
+        path = source / rel
         dest = root / rel
+        if not os.path.lexists(path):
+            if dest.is_dir() and not dest.is_symlink():
+                shutil.rmtree(dest)
+            elif os.path.lexists(dest):
+                dest.unlink()
+            continue
+        if path.is_dir() and not path.is_symlink():
+            continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, dest)
+        shutil.copy2(path, dest, follow_symlinks=False)
+
+
+def _copy_ignores(_directory: str, names: list[str]) -> set[str]:
+    return {
+        name
+        for name in names
+        if name in COPY_SKIP_DIRS or name in COPY_SKIP_FILES or _is_sensitive_env_file(Path(name))
+    }
+
+
+def _is_sensitive_env_file(path: Path) -> bool:
+    name = path.name.lower()
+    if name == ".env":
+        return True
+    if not name.startswith(".env."):
+        return False
+    return name.removeprefix(".env.") not in SAFE_ENV_SUFFIXES
+
+
+def _remove_worktree(source: Path, root: Path) -> None:
+    if root.exists():
+        _git(["worktree", "remove", "--force", str(root)], source)
+    _git(["worktree", "prune"], source)
+    if root.exists():
+        shutil.rmtree(root)
+
+
+def _assert_symlinks_stay_in_stage(root: Path) -> None:
+    resolved_root = root.resolve()
+    for path in root.rglob("*"):
+        if not path.is_symlink():
+            continue
+        try:
+            path.resolve().relative_to(resolved_root)
+        except (OSError, RuntimeError, ValueError) as exc:
+            relative = path.relative_to(root)
+            raise IsolationError(f"stage symlink escapes the worktree: {relative}") from exc
 
 
 @dataclass
