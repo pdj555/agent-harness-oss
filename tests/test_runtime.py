@@ -4,7 +4,7 @@ from pathlib import Path
 
 from harness.config import Config
 from harness.provider import Completion, DeterministicProvider, ScriptedProvider, ToolCall
-from harness.runtime import execute_run
+from harness.runtime import execute_run, within_budget
 from harness.store import Store
 from tests.helpers import copy_sample, git_init
 
@@ -261,3 +261,46 @@ def test_an_unexpected_tool_error_becomes_evidence_not_a_dead_run(tmp_path: Path
     run = store.get_run(run_id)
     assert run.status in {"failed", "completed"}
     assert any("tool exploded" in event["detail"] for event in run.events)
+
+
+def _tool_message(name: str, size: int, index: int) -> dict:
+    return {
+        "role": "tool",
+        "name": name,
+        "tool_call_id": f"call-{index}",
+        "arguments": {"path": f"file{index}.py"},
+        "content": "x" * size,
+    }
+
+
+def test_old_tool_output_is_elided_but_recent_evidence_is_kept():
+    messages = [
+        {"role": "system", "content": "s" * 5000},
+        {"role": "user", "content": "u" * 5000},
+    ]
+    messages += [_tool_message("read_file", 8000, index) for index in range(20)]
+    messages.append(_tool_message("git_diff", 120, 99))
+
+    trimmed = within_budget(messages)
+
+    assert len(trimmed) == len(messages)
+    assert trimmed[0] == messages[0]
+    assert trimmed[1] == messages[1]
+    assert trimmed[-1]["content"] == messages[-1]["content"]
+    assert trimmed[-2]["content"] == messages[-2]["content"]
+    assert "elided" in trimmed[2]["content"]
+    assert trimmed[2]["tool_call_id"] == "call-0"
+    assert trimmed[2]["name"] == "read_file"
+    carried = sum(len(message["content"]) for message in trimmed if message["role"] == "tool")
+    assert carried < sum(len(message["content"]) for message in messages if message["role"] == "tool")
+
+
+def test_a_short_transcript_is_passed_through_untouched():
+    messages = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "u"},
+        _tool_message("read_file", 300, 1),
+        _tool_message("search", 900, 2),
+    ]
+
+    assert within_budget(messages) == messages

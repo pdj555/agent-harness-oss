@@ -33,6 +33,9 @@ DEFAULT_PLAN = [
 
 TOOL_OUTPUT_LIMIT = 8000
 EVENT_LIMIT = 2000
+TRANSCRIPT_BUDGET = 48_000
+KEEP_RECENT_TOOLS = 8
+ELISION_FLOOR = 400
 
 NEXT_DOLLAR = (
     "Find the highest-leverage change that increases revenue or stops a loss, "
@@ -155,7 +158,7 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
             return
 
         try:
-            completion = provider.complete(messages, tools)
+            completion = provider.complete(within_budget(messages), tools)
         except Exception as exc:
             store.update_run(run_id, status="failed", result=f"Provider failed: {exc}", blockers=["provider"])
             return
@@ -297,6 +300,37 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         result="Reached the step limit without verification evidence.",
         blockers=["step limit"],
     )
+
+
+def within_budget(messages: list[dict]) -> list[dict]:
+    """Carry recent tool output in full and elide the rest.
+
+    Every step resends the whole transcript, so an unbounded history costs the
+    square of the run length in tokens and latency. Recent evidence decides the
+    next call; older output stays reachable by running the tool again.
+    """
+    trimmed = list(messages)
+    seen = 0
+    carried = 0
+    for index in range(len(trimmed) - 1, -1, -1):
+        message = trimmed[index]
+        if message.get("role") != "tool":
+            continue
+        content = message.get("content") or ""
+        seen += 1
+        if len(content) <= ELISION_FLOOR or (
+            seen <= KEEP_RECENT_TOOLS and carried + len(content) <= TRANSCRIPT_BUDGET
+        ):
+            carried += len(content)
+            continue
+        trimmed[index] = {
+            **message,
+            "content": (
+                f"(earlier {message.get('name') or 'tool'} output elided: {len(content)} "
+                "characters; run the tool again if you still need it)"
+            ),
+        }
+    return trimmed
 
 
 def _tool_failure(store: Store, run_id: str, messages: list[dict], call, detail: str) -> None:

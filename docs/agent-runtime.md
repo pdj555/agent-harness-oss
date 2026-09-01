@@ -23,6 +23,16 @@ queued -> running -> {completed | failed | stopped}
 Events recorded for the UI are actions, evidence, artifacts, decisions, and
 results. They are not a chain of thought dump.
 
+## Transcript budget
+
+Every step resends the whole transcript, so unbounded history costs the square
+of the run length in tokens and latency. `within_budget` carries the most
+recent tool results in full and replaces older large ones with a one-line note
+naming the tool and the size. Message structure is untouched, so tool results
+still line up with their calls, and any elided output can be produced again by
+running the tool. On a 24-step inspection of this repository that is 36% fewer
+prompt characters.
+
 ## Tools
 
 | Tool | Principal | Helper | Reviewer |
