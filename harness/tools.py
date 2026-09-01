@@ -38,6 +38,7 @@ def execute(
     role: str,
     helper: Callable[[str], str] | None = None,
     stopped: bool = False,
+    shell_timeout: int = SHELL_TIMEOUT,
 ) -> str:
     allow_tool(role, name)
     if stopped and name in MUTATING_TOOLS:
@@ -54,7 +55,7 @@ def execute(
     if name == "write_file":
         return _write_file(stage.root, args)
     if name == "run_shell":
-        return _run_shell(stage.root, str(args.get("command") or ""))
+        return _run_shell(stage.root, str(args.get("command") or ""), shell_timeout)
     if name == "git_status":
         return _git(["status", "--short"], stage.root)
     if name == "git_diff":
@@ -263,7 +264,7 @@ def _edit_file(root: Path, args: dict) -> str:
     return f"updated {path.relative_to(root)}"
 
 
-def _run_shell(root: Path, command: str) -> str:
+def _run_shell(root: Path, command: str, timeout: int = SHELL_TIMEOUT) -> str:
     if not command.strip():
         raise ToolError("command is required")
     try:
@@ -287,14 +288,14 @@ def _run_shell(root: Path, command: str) -> str:
             cwd=root,
             capture_output=True,
             text=True,
-            timeout=SHELL_TIMEOUT,
+            timeout=timeout,
             env=env,
             check=False,
         )
     except FileNotFoundError as exc:
         raise ToolError(str(exc)) from exc
     except subprocess.TimeoutExpired as exc:
-        raise ToolError(f"command timed out after {SHELL_TIMEOUT}s") from exc
+        raise ToolError(f"command timed out after {timeout}s") from exc
     output = ((proc.stdout or "") + (proc.stderr or "")).strip()
     if len(output) > SHELL_OUTPUT_LIMIT:
         output = output[-SHELL_OUTPUT_LIMIT:]

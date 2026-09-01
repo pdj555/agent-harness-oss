@@ -187,6 +187,7 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                         role="principal",
                         helper=helper,
                         stopped=bool(current and current.stop_requested),
+                        shell_timeout=config.shell_timeout,
                     )
                     store.add_event(
                         run_id, "action", _human_action(call.name, call.arguments)
@@ -217,7 +218,9 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
 
         store.update_run(run_id, active_work="Running verification.")
         try:
-            evidence = run_checks(stage.root, timeout=config.check_timeout)
+            evidence = run_checks(
+                stage.root, command=config.check_command, timeout=config.check_timeout
+            )
             files = stage.changed_files()
             diff = stage.diff()
             store.update_run(

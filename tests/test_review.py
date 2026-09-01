@@ -68,3 +68,20 @@ def test_review_accepts_implementation_change_when_tests_remain(tmp_path: Path):
     assert review["passed"] is True
     assert review["role"] == "reviewer"
     assert "tracker.py" in review["files_reviewed"]
+
+
+def test_review_recognizes_tests_that_are_not_python(tmp_path: Path):
+    source = tmp_path / "web"
+    (source / "src").mkdir(parents=True)
+    (source / "src" / "app.js").write_text("export const value = 1;\n", encoding="utf-8")
+    (source / "src" / "app.test.js").write_text("test('value', () => {});\n", encoding="utf-8")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "review-js")
+    (stage.root / "src" / "app.js").write_text("export const value = 2;\n", encoding="utf-8")
+
+    green = Verification(passed=True, command="npm test", exit_code=0, output="1 passing")
+    review = run_review(stage, green, ScriptedProvider([]))
+
+    assert review["passed"] is True
+    assert review["findings"] == []
+    assert "src/app.js" in review["files_reviewed"]

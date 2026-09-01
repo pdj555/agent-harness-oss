@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,7 +43,9 @@ class Config:
     auto_publish: bool = False
     max_steps: int = 24
     max_repairs: int = 2
+    check_command: list[str] = field(default_factory=list)
     check_timeout: int = 300
+    shell_timeout: int = 120
     provider_instance: Any = None
 
 
@@ -135,6 +138,13 @@ def load_config(path: Path | None = None, *, prefer_live: bool = True) -> Config
         config.provider_name = str(provider.get("name", config.provider_name))
         config.data_dir = _resolve_root(data.get("dir", config.data_dir), candidate.parent)
         config.auto_publish = bool(workspace.get("auto_publish", config.auto_publish))
+        config.check_command = _command(raw.get("verification", {}).get("command"))
+        config.check_timeout = int(
+            raw.get("verification", {}).get("timeout", config.check_timeout)
+        )
+        config.shell_timeout = int(
+            raw.get("verification", {}).get("shell_timeout", config.shell_timeout)
+        )
     if not config.workspace_roots and DEFAULT_SAMPLE.is_dir():
         config.workspace_roots = [DEFAULT_SAMPLE]
     env_provider = os.environ.get("HARNESS_PROVIDER")
@@ -155,6 +165,17 @@ def load_config(path: Path | None = None, *, prefer_live: bool = True) -> Config
             config.workspace_roots.append(root)
             seen.add(root.resolve())
     return config
+
+
+def _command(value: object) -> list[str]:
+    """Read an operator-declared check command. Empty means the pytest default."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        return shlex.split(value)
+    if isinstance(value, list):
+        return [str(part) for part in value if str(part)]
+    raise ValueError("verification.command must be a string or a list of strings")
 
 
 def _resolve_root(value: Path | str, base: Path) -> Path:

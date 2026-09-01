@@ -45,8 +45,12 @@ creates. Git status and diff run with `cwd` set to the stage.
 
 `run_shell` uses `shlex.split` (no `shell=True`), forces `cwd` to the stage,
 replaces `python3` with the current interpreter, and passes a filtered
-environment without provider credentials. Timeout is 60 seconds. Git
+environment without provider credentials. The timeout is `shell_timeout`, 120
+seconds by default, so the agent can run the same suite verification runs. Git
 subprocesses use a filtered environment and `core.hooksPath=/dev/null`.
+
+The verification command runs the same way: filtered environment, `cwd` in the
+stage, no shell. Only `harness.toml` can change it.
 
 ## Credential redaction
 

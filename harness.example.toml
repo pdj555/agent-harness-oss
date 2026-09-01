@@ -14,5 +14,12 @@ roots = ["examples/sample-repo"]
 # "deterministic" is for `harness demo` and tests only.
 # name = "openai_compat"
 
+[verification]
+# Software decides completion. pytest is the default; name another command here
+# for a project that proves itself differently. Operators set this, not models.
+# command = ["npm", "test", "--silent"]
+# timeout = 600
+# shell_timeout = 120
+
 [data]
 dir = ".harness"

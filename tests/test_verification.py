@@ -89,3 +89,31 @@ def test_a_repository_without_tests_cannot_pass_verification(tmp_path: Path):
     assert result.passed is False
     assert "collected no tests" in result.output.lower()
     assert "add a test" in result.output.lower()
+
+
+def test_an_operator_can_name_the_check_command(tmp_path: Path):
+    source = tmp_path / "project"
+    source.mkdir()
+    (source / "check.py").write_text("print('house checks passed')\n", encoding="utf-8")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-command")
+
+    passing = run_checks(stage.root, command=["python", "check.py"])
+    failing = run_checks(stage.root, command=["python", "-c", "raise SystemExit(3)"])
+
+    assert passing.passed is True
+    assert passing.command == "python check.py"
+    assert "house checks passed" in passing.output
+    assert failing.passed is False
+    assert failing.exit_code == 3
+
+
+def test_a_missing_check_command_is_evidence_not_a_crash(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-missing")
+
+    result = run_checks(stage.root, command=["definitely-not-installed", "--version"])
+
+    assert result.passed is False
+    assert "could not start" in result.output

@@ -77,6 +77,18 @@ that cannot start, and a repository that collects no tests all come back as
 `passed: false` with output that says which happened. A run therefore always
 reaches a verdict a person can read; it never stalls in `running`.
 
+pytest is the default command. A project that proves itself another way names
+its command in `harness.toml`:
+
+```toml
+[verification]
+command = ["npm", "test", "--silent"]
+timeout = 600
+```
+
+That file belongs to the operator. A model cannot set it, and neither can the
+repository being worked on, so the verdict stays outside the agent's reach.
+
 Completion also requires an independent review record (`role: reviewer`) whose
 summary is not the principal's final text.
 

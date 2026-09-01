@@ -196,3 +196,19 @@ def test_edit_file_errors_say_how_to_recover(tmp_path: Path):
         assert "times" in str(exc) and "unique" in str(exc)
     else:
         raise AssertionError("an ambiguous anchor must fail")
+
+
+def test_the_shell_timeout_is_configurable(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    try:
+        execute(
+            "run_shell",
+            {"command": "python3 -c 'import time; time.sleep(30)'"},
+            stage=stage,
+            role="principal",
+            shell_timeout=1,
+        )
+    except ToolError as exc:
+        assert "timed out after 1s" in str(exc)
+    else:
+        raise AssertionError("a hung command must be reported, not awaited")

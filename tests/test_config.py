@@ -72,3 +72,38 @@ def test_short_values_are_not_treated_as_secrets(monkeypatch):
     monkeypatch.setenv("SOME_KEY", "short")
 
     assert "short" not in secret_values()
+
+
+def test_operator_config_declares_the_check_command_and_timeouts(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HARNESS_PROVIDER", "deterministic")
+    (tmp_path / "harness.toml").write_text(
+        "\n".join(
+            [
+                "[workspace]",
+                'roots = ["."]',
+                "",
+                "[verification]",
+                'command = ["npm", "test"]',
+                "timeout = 900",
+                "shell_timeout = 240",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(tmp_path / "harness.toml")
+
+    assert config.check_command == ["npm", "test"]
+    assert config.check_timeout == 900
+    assert config.shell_timeout == 240
+
+
+def test_the_check_command_defaults_to_pytest(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HARNESS_PROVIDER", "deterministic")
+
+    config = load_config(tmp_path / "missing.toml")
+
+    assert config.check_command == []
+    assert config.check_timeout == 300
