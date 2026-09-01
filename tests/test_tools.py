@@ -212,3 +212,28 @@ def test_the_shell_timeout_is_configurable(tmp_path: Path):
         assert "timed out after 1s" in str(exc)
     else:
         raise AssertionError("a hung command must be reported, not awaited")
+
+
+def test_search_can_be_scoped_to_a_file_pattern(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    (stage.root / "notes.md").write_text("classify_priority is documented here\n", encoding="utf-8")
+
+    everywhere = execute("search", {"query": "classify_priority"}, stage=stage, role="principal")
+    scoped = execute(
+        "search", {"query": "classify_priority", "pattern": "*.md"}, stage=stage, role="principal"
+    )
+
+    assert "notes.md" in everywhere and "tracker.py" in everywhere
+    assert "notes.md" in scoped
+    assert "tracker.py" not in scoped
+
+
+def test_a_blank_pattern_lists_everything_instead_of_nothing(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    for blank in ("", "   ", None):
+        listed = execute("list_files", {"pattern": blank}, stage=stage, role="principal")
+        assert "tracker.py" in listed
+    scoped = execute(
+        "search", {"query": "classify_priority", "pattern": "  "}, stage=stage, role="principal"
+    )
+    assert "tracker.py" in scoped

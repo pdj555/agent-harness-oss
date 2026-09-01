@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import io
+import json
+import urllib.error
+
+import harness.provider as provider_module
 from harness.provider import (
     DeterministicProvider,
     OpenAICompatProvider,
@@ -180,3 +185,92 @@ def test_scripted_provider_shares_the_same_complete_contract():
         tools=[{"name": "list_files"}],
     )
     assert result.tool_calls or result.text
+
+
+class _Response:
+    def __init__(self, body: dict) -> None:
+        self._body = json.dumps(body).encode("utf-8")
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info) -> bool:
+        return False
+
+
+def _http_error(code: int, retry_after: str | None = None) -> urllib.error.HTTPError:
+    headers = {"Retry-After": retry_after} if retry_after else {}
+    return urllib.error.HTTPError("https://vendor.example/v1", code, "boom", headers, io.BytesIO(b"busy"))
+
+
+def test_a_rate_limited_request_is_retried_before_it_gives_up(monkeypatch):
+    attempts = []
+    slept = []
+
+    def urlopen(request, timeout=None):
+        attempts.append(timeout)
+        if len(attempts) < 3:
+            raise _http_error(429, retry_after="2")
+        return _Response({"ok": True})
+
+    monkeypatch.setattr(provider_module.urllib.request, "urlopen", urlopen)
+    body = provider_module._post_json(
+        "https://vendor.example/v1/chat/completions",
+        {"model": "m"},
+        "key",
+        timeout=30,
+        sleep=slept.append,
+    )
+
+    assert body == {"ok": True}
+    assert len(attempts) == 3
+    assert slept == [2.0, 2.0]
+
+
+def test_a_rejected_request_is_not_retried(monkeypatch):
+    attempts = []
+
+    def urlopen(request, timeout=None):
+        attempts.append(timeout)
+        raise _http_error(400)
+
+    monkeypatch.setattr(provider_module.urllib.request, "urlopen", urlopen)
+    try:
+        provider_module._post_json(
+            "https://vendor.example/v1/chat/completions",
+            {"model": "m"},
+            "key",
+            timeout=30,
+            sleep=lambda _seconds: None,
+        )
+    except RuntimeError as exc:
+        assert "HTTP 400" in str(exc)
+    else:
+        raise AssertionError("a rejected request must fail immediately")
+    assert len(attempts) == 1
+
+
+def test_a_dropped_connection_is_retried_then_reported(monkeypatch):
+    attempts = []
+
+    def urlopen(request, timeout=None):
+        attempts.append(timeout)
+        raise urllib.error.URLError("connection reset")
+
+    monkeypatch.setattr(provider_module.urllib.request, "urlopen", urlopen)
+    try:
+        provider_module._post_json(
+            "https://vendor.example/v1/chat/completions",
+            {"model": "m"},
+            "key",
+            timeout=30,
+            sleep=lambda _seconds: None,
+        )
+    except RuntimeError as exc:
+        assert "connection reset" in str(exc)
+    else:
+        raise AssertionError("an unreachable vendor must be reported")
+    assert len(attempts) == provider_module.MAX_ATTEMPTS

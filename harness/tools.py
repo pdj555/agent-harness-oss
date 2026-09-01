@@ -45,9 +45,10 @@ def execute(
         raise ToolError("stop was requested; mutating work is not allowed")
     args = arguments or {}
     if name == "list_files":
-        return _list_files(stage.root, str(args.get("pattern") or "*"))
+        return _list_files(stage.root, _pattern(args.get("pattern")))
     if name == "search":
-        return _search(stage.root, str(args.get("query") or ""))
+        pattern = str(args.get("pattern") or "").strip()
+        return _search(stage.root, str(args.get("query") or ""), pattern)
     if name == "read_file":
         return _read_file(stage.root, args)
     if name == "edit_file":
@@ -80,7 +81,10 @@ TOOL_PARAMETERS = {
     },
     "search": {
         "type": "object",
-        "properties": {"query": {"type": "string"}},
+        "properties": {
+            "query": {"type": "string"},
+            "pattern": {"type": "string"},
+        },
         "required": ["query"],
     },
     "read_file": {
@@ -137,7 +141,10 @@ def tool_specs(role: str) -> list[dict]:
 
     descriptions = {
         "list_files": "List files in the isolated worktree matching a glob pattern.",
-        "search": "Search file contents for a query string.",
+        "search": (
+            "Search file contents for a query string. Optional pattern (a glob "
+            "such as *.py or src/*.ts) searches only matching files."
+        ),
         "read_file": (
             "Read a UTF-8 file relative to the worktree root. Optional offset "
             "(1-based line) and limit read one window of a long file."
@@ -162,11 +169,23 @@ def tool_specs(role: str) -> list[dict]:
     return specs
 
 
+def _pattern(raw: object) -> str:
+    """A blank or whitespace-only pattern means every file, not no files."""
+    return str(raw or "").strip() or "*"
+
+
+def _matches(rel: Path, pattern: str) -> bool:
+    try:
+        return rel.match(pattern)
+    except ValueError as exc:
+        raise ToolError(f"invalid pattern: {pattern}") from exc
+
+
 def _list_files(root: Path, pattern: str) -> str:
     matches: list[str] = []
     for path in iter_files(root):
         rel = path.relative_to(root)
-        if not rel.match(pattern):
+        if not _matches(rel, pattern):
             continue
         matches.append(str(rel))
         if len(matches) >= LIST_LIMIT:
@@ -175,17 +194,19 @@ def _list_files(root: Path, pattern: str) -> str:
     return "\n".join(matches) if matches else "(no files)"
 
 
-def _search(root: Path, query: str) -> str:
+def _search(root: Path, query: str, pattern: str = "") -> str:
     if not query:
         raise ToolError("search query is required")
     hits: list[str] = []
     needle = query.lower()
     truncated = False
     for path in iter_files(root):
+        rel = path.relative_to(root)
+        if pattern and not _matches(rel, pattern):
+            continue
         text = read_text(path)
         if text is None:
             continue
-        rel = path.relative_to(root)
         for number, line in enumerate(text.splitlines(), start=1):
             if needle in line.lower():
                 hits.append(f"{rel}:{number}:{line.strip()[:LINE_LIMIT]}")

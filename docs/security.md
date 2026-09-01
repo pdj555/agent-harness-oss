@@ -52,6 +52,14 @@ subprocesses use a filtered environment and `core.hooksPath=/dev/null`.
 The verification command runs the same way: filtered environment, `cwd` in the
 stage, no shell. Only `harness.toml` can change it.
 
+## Provider requests
+
+A vendor call retries only what is worth retrying: rate limits, gateway
+errors, and dropped connections, three attempts with exponential backoff and
+`Retry-After` honored when the vendor sends it. A rejected request - bad key,
+bad model, bad payload - fails at once. Credentials travel in the
+`Authorization` header, never in a prompt.
+
 ## Credential redaction
 
 `harness.config.redact` removes environment values whose variable name reads

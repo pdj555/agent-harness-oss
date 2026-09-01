@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -220,7 +221,28 @@ class OpenAICompatProvider:
         return _completion_from_chat(body)
 
 
-def _post_json(url: str, payload: dict, api_key: str, *, timeout: int) -> dict:
+RETRY_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+MAX_ATTEMPTS = 3
+BACKOFF_SECONDS = 1.0
+MAX_BACKOFF_SECONDS = 20.0
+
+
+def _post_json(
+    url: str,
+    payload: dict,
+    api_key: str,
+    *,
+    timeout: int,
+    attempts: int = MAX_ATTEMPTS,
+    sleep=time.sleep,
+) -> dict:
+    """POST to a vendor, retrying the failures that are worth retrying.
+
+    Rate limits, gateway errors, and dropped connections are transient; losing
+    a whole run of work to one of them is not acceptable. A rejected request -
+    bad key, bad model, bad payload - fails immediately, because retrying it
+    only wastes time.
+    """
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -230,14 +252,30 @@ def _post_json(url: str, payload: dict, api_key: str, *, timeout: int) -> dict:
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1200]
-        raise RuntimeError(f"provider request failed: HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"provider request failed: {exc}") from exc
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:1200]
+            failure = RuntimeError(f"provider request failed: HTTP {exc.code}: {detail}")
+            if exc.code not in RETRY_STATUSES or attempt == attempts:
+                raise failure from exc
+            sleep(_backoff(attempt, exc.headers.get("Retry-After") if exc.headers else None))
+        except OSError as exc:  # URLError and socket timeouts both land here
+            if attempt == attempts:
+                raise RuntimeError(f"provider request failed: {exc}") from exc
+            sleep(_backoff(attempt, None))
+    raise RuntimeError("provider request failed: no attempts were made")
+
+
+def _backoff(attempt: int, retry_after: str | None) -> float:
+    if retry_after:
+        try:
+            return min(max(float(retry_after), 0.0), MAX_BACKOFF_SECONDS)
+        except ValueError:
+            pass
+    return min(BACKOFF_SECONDS * (2 ** (attempt - 1)), MAX_BACKOFF_SECONDS)
 
 
 def _completion_from_chat(body: dict) -> Completion:
