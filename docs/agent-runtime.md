@@ -28,8 +28,13 @@ results. They are not a chain of thought dump.
 | Tool | Principal | Helper | Reviewer |
 | --- | --- | --- | --- |
 | list_files, search, read_file, git_status, git_diff | yes | yes | yes |
-| edit_file, run_shell | yes | yes | no |
+| edit_file, write_file, run_shell | yes | yes | no |
 | delegate | yes | no | no |
+
+`read_file` returns the whole file when it is short, and a labelled line window
+(`offset`, `limit`) when it is long, so a long file is read deliberately rather
+than silently truncated. `write_file` creates or overwrites a file in the
+stage; like every mutating tool it is refused after stop.
 
 `delegate` runs a software helper that inspects the stage and returns evidence.
 The user never manages that helper.

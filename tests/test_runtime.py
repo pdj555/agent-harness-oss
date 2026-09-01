@@ -241,3 +241,23 @@ def test_a_broken_verification_step_fails_the_run_instead_of_hanging(tmp_path: P
     assert run.status == "failed"
     assert "checks exploded" in (run.result or "")
     assert run.blockers == ["verification error"]
+
+
+def test_an_unexpected_tool_error_becomes_evidence_not_a_dead_run(tmp_path: Path, monkeypatch):
+    store, config, run_id = _setup(tmp_path)
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("tool exploded")
+
+    monkeypatch.setattr("harness.runtime.execute", explode)
+    provider = ScriptedProvider(
+        [
+            Completion(tool_calls=[ToolCall(name="list_files", arguments={"pattern": "*.py"})]),
+            Completion(text="done"),
+        ]
+    )
+    execute_run(run_id, store=store, config=config, provider=provider)
+
+    run = store.get_run(run_id)
+    assert run.status in {"failed", "completed"}
+    assert any("tool exploded" in event["detail"] for event in run.events)

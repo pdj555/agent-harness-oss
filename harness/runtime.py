@@ -206,17 +206,10 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                         }
                     )
                 except (PathDenied, PermissionDenied, ToolError) as exc:
-                    detail = f"{call.name} denied: {exc}"
-                    store.add_event(run_id, "decision", detail)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "name": call.name,
-                            "tool_call_id": call.id,
-                            "arguments": call.arguments or {},
-                            "content": detail,
-                        }
-                    )
+                    _tool_failure(store, run_id, messages, call, f"{call.name} denied: {exc}")
+                except Exception as exc:
+                    # A bad argument from the model is evidence, not a dead run.
+                    _tool_failure(store, run_id, messages, call, f"{call.name} failed: {exc}")
             continue
 
         store.update_run(run_id, active_work="Running verification.")
@@ -306,6 +299,19 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
     )
 
 
+def _tool_failure(store: Store, run_id: str, messages: list[dict], call, detail: str) -> None:
+    store.add_event(run_id, "decision", detail)
+    messages.append(
+        {
+            "role": "tool",
+            "name": call.name,
+            "tool_call_id": call.id,
+            "arguments": call.arguments or {},
+            "content": detail,
+        }
+    )
+
+
 def _assistant_message(completion: Completion) -> dict:
     return {
         "role": "assistant",
@@ -341,6 +347,8 @@ def _human_action(name: str, arguments: dict | None) -> str:
         return f"Searched for {args.get('query') or 'a pattern'}"
     if name == "edit_file":
         return f"Edited {args.get('path') or 'a file'}"
+    if name == "write_file":
+        return f"Wrote {args.get('path') or 'a file'}"
     if name == "run_shell":
         return f"Ran {str(args.get('command') or 'a command')[:80]}"
     if name == "git_status":

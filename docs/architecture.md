@@ -24,7 +24,7 @@ browser  ->  auth  ->  app  ->  runtime  ->  provider
 | `harness/authority.py` | path and role checks |
 | `harness/fs.py` | one pruning file walk and text guard |
 | `harness/isolation.py` | Git worktree / copied git stage, publish |
-| `harness/tools.py` | list, search, read, edit, shell, git, delegate |
+| `harness/tools.py` | list, search, read, edit, write, shell, git, delegate |
 | `harness/provider.py` | provider protocol; deterministic and OpenAI-compatible |
 | `harness/runtime.py` | principal loop, stop, repair |
 | `harness/verification.py` | parent-run checks |

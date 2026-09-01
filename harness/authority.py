@@ -17,6 +17,7 @@ ROLE_TOOLS = {
         "search",
         "read_file",
         "edit_file",
+        "write_file",
         "run_shell",
         "git_status",
         "git_diff",
@@ -28,6 +29,7 @@ ROLE_TOOLS = {
         "search",
         "read_file",
         "edit_file",
+        "write_file",
         "run_shell",
         "git_status",
         "git_diff",
@@ -41,7 +43,7 @@ ROLE_TOOLS = {
     },
 }
 
-MUTATING_TOOLS = {"edit_file", "run_shell", "delegate"}
+MUTATING_TOOLS = {"edit_file", "write_file", "run_shell", "delegate"}
 
 
 def resolve_in_root(root: Path, rel: str) -> Path:

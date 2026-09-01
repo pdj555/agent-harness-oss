@@ -20,6 +20,8 @@ from harness.isolation import Stage, git
 LIST_LIMIT = 400
 SEARCH_LIMIT = 50
 LINE_LIMIT = 200
+READ_LINE_LIMIT = 800
+READ_MAX_BYTES = 4_000_000
 SHELL_TIMEOUT = 60
 SHELL_OUTPUT_LIMIT = 20_000
 
@@ -46,12 +48,11 @@ def execute(
     if name == "search":
         return _search(stage.root, str(args.get("query") or ""))
     if name == "read_file":
-        path = resolve_in_root(stage.root, str(args.get("path") or ""))
-        if not path.is_file():
-            raise ToolError(f"file not found: {args.get('path')}")
-        return path.read_text(encoding="utf-8")
+        return _read_file(stage.root, args)
     if name == "edit_file":
         return _edit_file(stage.root, args)
+    if name == "write_file":
+        return _write_file(stage.root, args)
     if name == "run_shell":
         return _run_shell(stage.root, str(args.get("command") or ""))
     if name == "git_status":
@@ -83,7 +84,11 @@ TOOL_PARAMETERS = {
     },
     "read_file": {
         "type": "object",
-        "properties": {"path": {"type": "string"}},
+        "properties": {
+            "path": {"type": "string"},
+            "offset": {"type": "integer"},
+            "limit": {"type": "integer"},
+        },
         "required": ["path"],
     },
     "edit_file": {
@@ -94,6 +99,14 @@ TOOL_PARAMETERS = {
             "new": {"type": "string"},
         },
         "required": ["path", "old", "new"],
+    },
+    "write_file": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["path", "content"],
     },
     "run_shell": {
         "type": "object",
@@ -124,8 +137,12 @@ def tool_specs(role: str) -> list[dict]:
     descriptions = {
         "list_files": "List files in the isolated worktree matching a glob pattern.",
         "search": "Search file contents for a query string.",
-        "read_file": "Read a UTF-8 file relative to the worktree root.",
+        "read_file": (
+            "Read a UTF-8 file relative to the worktree root. Optional offset "
+            "(1-based line) and limit read one window of a long file."
+        ),
         "edit_file": "Replace exactly one occurrence of old with new in a file.",
+        "write_file": "Create or overwrite a file in the worktree with the given content.",
         "run_shell": "Run a command with cwd set to the isolated worktree.",
         "git_status": "Show git status of the isolated worktree.",
         "git_diff": "Show git diff of the isolated worktree.",
@@ -183,6 +200,49 @@ def _search(root: Path, query: str) -> str:
     return "\n".join(hits)
 
 
+def _read_file(root: Path, args: dict) -> str:
+    path = resolve_in_root(root, str(args.get("path") or ""))
+    if not path.is_file():
+        raise ToolError(f"file not found: {args.get('path')}")
+    text = read_text(path, max_bytes=READ_MAX_BYTES)
+    if text is None:
+        raise ToolError(f"file is binary or larger than {READ_MAX_BYTES} bytes: {args.get('path')}")
+    start = max(_int_arg(args, "offset", 1), 1)
+    limit = max(_int_arg(args, "limit", READ_LINE_LIMIT), 1)
+    lines = text.splitlines()
+    if start == 1 and len(lines) <= limit:
+        return text
+    window = lines[start - 1 : start - 1 + limit]
+    if not window:
+        raise ToolError(f"offset {start} is past the end of the file ({len(lines)} lines)")
+    last = start + len(window) - 1
+    header = f"({path.relative_to(root)} lines {start}-{last} of {len(lines)}; read again with offset)"
+    return header + "\n" + "\n".join(window)
+
+
+def _int_arg(args: dict, name: str, default: int) -> int:
+    raw = args.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ToolError(f"{name} must be an integer") from exc
+
+
+def _write_file(root: Path, args: dict) -> str:
+    path = resolve_in_root(root, str(args.get("path") or ""))
+    content = args.get("content")
+    if content is None:
+        raise ToolError("write_file requires content")
+    if path.is_dir():
+        raise ToolError(f"path is a directory: {args.get('path')}")
+    text = str(content)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return f"wrote {path.relative_to(root)} ({len(text.splitlines())} lines)"
+
+
 def _edit_file(root: Path, args: dict) -> str:
     path = resolve_in_root(root, str(args.get("path") or ""))
     old = args.get("old")
@@ -192,8 +252,13 @@ def _edit_file(root: Path, args: dict) -> str:
     if not path.is_file():
         raise ToolError(f"file not found: {args.get('path')}")
     text = path.read_text(encoding="utf-8")
-    if text.count(old) != 1:
-        raise ToolError("old text must match exactly once")
+    matches = text.count(old)
+    if matches == 0:
+        raise ToolError("old text was not found; copy it exactly from read_file")
+    if matches > 1:
+        raise ToolError(
+            f"old text matched {matches} times; include surrounding lines to make it unique"
+        )
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
     return f"updated {path.relative_to(root)}"
 

@@ -108,3 +108,91 @@ def test_search_says_when_it_stopped_early(tmp_path: Path):
     lines = found.splitlines()
     assert len(lines) <= 51
     assert "narrow the query" in lines[-1]
+
+
+def test_write_file_creates_a_file_inside_the_stage(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    result = execute(
+        "write_file",
+        {"path": "pkg/test_new.py", "content": "def test_new():\n    assert True\n"},
+        stage=stage,
+        role="principal",
+    )
+    assert "pkg/test_new.py" in result
+    assert (stage.root / "pkg" / "test_new.py").read_text(encoding="utf-8").startswith("def test_new")
+    assert "pkg/test_new.py" in stage.changed_files()
+
+
+def test_write_file_cannot_escape_the_stage(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    outside = tmp_path / "outside.txt"
+    for target in ("../outside.txt", str(outside)):
+        try:
+            execute("write_file", {"path": target, "content": "no"}, stage=stage, role="principal")
+        except (PathDenied, ToolError):
+            pass
+        else:
+            raise AssertionError(f"write outside the stage must be denied: {target}")
+    assert not outside.exists()
+
+
+def test_reviewer_cannot_write_and_stop_blocks_writing(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    for role, stopped, expected in (("reviewer", False, PermissionDenied), ("principal", True, ToolError)):
+        try:
+            execute(
+                "write_file",
+                {"path": "sneaky.py", "content": "x = 1\n"},
+                stage=stage,
+                role=role,
+                stopped=stopped,
+            )
+        except expected:
+            pass
+        else:
+            raise AssertionError(f"{role} stopped={stopped} must not write")
+    assert not (stage.root / "sneaky.py").exists()
+
+
+def test_read_file_returns_a_labelled_window_of_a_long_file(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    (stage.root / "long.py").write_text(
+        "".join(f"line{number}\n" for number in range(1, 2001)), encoding="utf-8"
+    )
+
+    whole = execute("read_file", {"path": "long.py"}, stage=stage, role="principal")
+    window = execute(
+        "read_file", {"path": "long.py", "offset": 900, "limit": 3}, stage=stage, role="principal"
+    )
+
+    assert "of 2000" in whole.splitlines()[0]
+    assert whole.splitlines()[1] == "line1"
+    assert window.splitlines()[1:] == ["line900", "line901", "line902"]
+    assert "lines 900-902 of 2000" in window.splitlines()[0]
+
+
+def test_edit_file_errors_say_how_to_recover(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    try:
+        execute(
+            "edit_file",
+            {"path": "tracker.py", "old": "not in this file", "new": "x"},
+            stage=stage,
+            role="principal",
+        )
+    except ToolError as exc:
+        assert "not found" in str(exc)
+    else:
+        raise AssertionError("a missing anchor must fail")
+
+    try:
+        execute(
+            "edit_file",
+            {"path": "tracker.py", "old": "return", "new": "x"},
+            stage=stage,
+            role="principal",
+        )
+    except ToolError as exc:
+        assert "times" in str(exc) and "unique" in str(exc)
+    else:
+        raise AssertionError("an ambiguous anchor must fail")

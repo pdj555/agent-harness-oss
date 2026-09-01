@@ -38,7 +38,8 @@ similar credential file makes Git staging fail closed; `.env.example`,
 - `..` escapes after `Path.resolve()`
 - direct `.git` access through file tools
 
-Git status and diff run with `cwd` set to the stage.
+Every path a tool touches passes through it, including the file `write_file`
+creates. Git status and diff run with `cwd` set to the stage.
 
 ## Shell
 
