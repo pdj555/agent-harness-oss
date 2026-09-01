@@ -114,7 +114,12 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         )
         return
     try:
-        stage = create_stage(repo.path, config.data_dir / "stages", run_id)
+        stage = create_stage(
+            repo.path,
+            config.data_dir / "stages",
+            run_id,
+            keep_stages=config.keep_stages,
+        )
     except IsolationError as exc:
         store.update_run(run_id, status="failed", result=str(exc), blockers=["isolation"])
         return

@@ -46,6 +46,7 @@ class Config:
     check_command: list[str] = field(default_factory=list)
     check_timeout: int = 300
     shell_timeout: int = 120
+    keep_stages: int = 20
     provider_instance: Any = None
 
 
@@ -145,6 +146,7 @@ def load_config(path: Path | None = None, *, prefer_live: bool = True) -> Config
         config.shell_timeout = int(
             raw.get("verification", {}).get("shell_timeout", config.shell_timeout)
         )
+        config.keep_stages = int(data.get("keep_stages", config.keep_stages))
     if not config.workspace_roots and DEFAULT_SAMPLE.is_dir():
         config.workspace_roots = [DEFAULT_SAMPLE]
     env_provider = os.environ.get("HARNESS_PROVIDER")

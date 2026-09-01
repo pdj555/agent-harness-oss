@@ -186,3 +186,22 @@ def test_history_list_is_a_summary_without_run_payloads(client, app):
 
     detail = client.get(f"/api/runs/{run.id}").json()
     assert len(detail["diff"]) == 50_000
+
+
+def test_publish_reports_a_stage_that_is_no_longer_on_disk(client, app):
+    signup(client)
+    store = app.state.store
+    user = store.get_user_by_username("ada")
+    repo = store.list_repos(app.state.config.workspace_roots)[0]
+    run = store.create_run(user.id, repo.id, "Fix the failing tests.")
+    store.update_run(
+        run.id,
+        status="completed",
+        stage_path=str(app.state.config.data_dir / "stages" / "gone"),
+        verification={"passed": True, "command": "python -m pytest -q", "exit_code": 0, "output": ""},
+    )
+
+    response = client.post(f"/api/runs/{run.id}/publish")
+
+    assert response.status_code == 410
+    assert "no longer" in response.json()["error"]

@@ -42,7 +42,7 @@ Paid OpenAI daily driver is **GPT-5.6 Luna** at `reasoning_effort=xhigh`
 
 ## Why this is not a chat demo
 
-- Models propose. Pytest and independent review decide.
+- Models propose. The project's tests and independent review decide.
 - Mutating work happens in a Git worktree. The source tree does not move
   until you apply a verified delta.
 - The browser cannot create accounts or open arbitrary files.
@@ -60,7 +60,15 @@ proven without a vendor. It is not the product.
 ## Configuration
 
 Copy [harness.example.toml](harness.example.toml) to `harness.toml` if you need
-to bind a different port or extra roots. Additional repositories:
+to bind a different port or extra roots. A project that does not prove itself
+with pytest names its own command there:
+
+```toml
+[verification]
+command = ["npm", "test", "--silent"]
+```
+
+Additional repositories:
 
 ```bash
 uv run harness repo add ~/code/your-repo

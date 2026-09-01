@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -174,3 +175,30 @@ def test_publish_handles_paths_containing_spaces(tmp_path: Path):
     stage.publish()
 
     assert (source / "release notes.md").read_text(encoding="utf-8") == "shipped\n"
+
+
+def test_only_the_newest_stages_are_kept(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stages = tmp_path / "stages"
+    for index in range(3):
+        stage = create_stage(source, stages, f"run-{index}", keep_stages=2)
+        os.utime(stage.root, (1_700_000_000 + index, 1_700_000_000 + index))
+
+    remaining = sorted(path.name for path in stages.iterdir() if path.is_dir())
+
+    assert remaining == ["run-1", "run-2"]
+    assert (stages / "run-2" / "tracker.py").is_file()
+
+
+def test_retention_never_removes_the_stage_being_created(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stages = tmp_path / "stages"
+    create_stage(source, stages, "run-old", keep_stages=1)
+
+    stage = create_stage(source, stages, "run-new", keep_stages=1)
+
+    assert stage.root.is_dir()
+    assert (stage.root / "tracker.py").is_file()
+    assert sorted(path.name for path in stages.iterdir() if path.is_dir()) == ["run-new"]

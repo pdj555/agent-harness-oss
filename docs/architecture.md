@@ -64,6 +64,11 @@ If a Git repository tracks or leaves an env credential file unignored, staging
 fails with one action: add that file to `.gitignore`. Example, sample, and
 template env files remain available.
 
+A stage is a full worktree or copy, so they are kept by count: creating one
+removes all but the newest `data.keep_stages` (20 by default). Publishing reads
+the stage, so a run whose stage has been pruned reports that instead of
+publishing nothing.
+
 ## Verification
 
 When the model stops proposing tool calls, the runtime runs

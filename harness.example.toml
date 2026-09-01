@@ -23,3 +23,5 @@ roots = ["examples/sample-repo"]
 
 [data]
 dir = ".harness"
+# Isolated stages are full copies of a repository. Keep the newest N.
+# keep_stages = 20

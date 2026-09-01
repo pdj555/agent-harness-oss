@@ -196,6 +196,11 @@ def create_app(config: Config | None = None) -> FastAPI:
             )
         if not run.stage_path:
             raise HTTPException(status_code=400, detail={"error": "run has no isolated stage"})
+        if not Path(run.stage_path).is_dir():
+            raise HTTPException(
+                status_code=410,
+                detail={"error": "the isolated stage for this run is no longer on disk"},
+            )
         repo = store.repo_by_id(run.repo_id, config.workspace_roots)
         if repo is None:
             raise HTTPException(status_code=404, detail={"error": "repository not found"})

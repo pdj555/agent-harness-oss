@@ -66,12 +66,36 @@ def ensure_git_repo(path: Path) -> None:
         raise IsolationError(commit.stderr.strip() or "git commit failed")
 
 
-def create_stage(source: Path, stages_dir: Path, run_id: str) -> Stage:
+def prune_stages(stages_dir: Path, keep: int, *, protect: Path | None = None) -> list[str]:
+    """Drop all but the newest `keep` stage directories.
+
+    A stage is a full copy or worktree of a repository, so an unbounded history
+    of them fills the disk. Publishing reads the stage, so retention is by
+    count and the newest survive.
+    """
+    if keep < 0 or not stages_dir.is_dir():
+        return []
+    protected = protect.resolve() if protect else None
+    stages = [path for path in stages_dir.iterdir() if path.is_dir()]
+    if protected:
+        stages = [path for path in stages if path.resolve() != protected]
+    stages.sort(key=lambda path: (path.stat().st_mtime, path.name), reverse=True)
+    removed = []
+    for path in stages[keep:]:
+        shutil.rmtree(path, ignore_errors=True)
+        removed.append(path.name)
+    return removed
+
+
+def create_stage(source: Path, stages_dir: Path, run_id: str, *, keep_stages: int = -1) -> Stage:
     source = source.resolve()
     if not source.is_dir():
         raise IsolationError("repository path does not exist")
     stages_dir.mkdir(parents=True, exist_ok=True)
     root = (stages_dir / run_id).resolve()
+    if keep_stages >= 0:
+        # Leave room for the stage this run is about to create.
+        prune_stages(stages_dir, max(keep_stages - 1, 0), protect=root)
     is_git_root = _is_git_root(source)
     if is_git_root:
         _remove_worktree(source, root)
