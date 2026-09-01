@@ -103,3 +103,20 @@ def test_review_blocks_a_change_that_deletes_a_failing_test(tmp_path: Path):
     assert review["passed"] is False
     assert any("deleted" in finding for finding in review["findings"])
     assert "test_tracker.py" in " ".join(review["findings"])
+
+
+def test_review_blocks_a_change_that_empties_a_test_file(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    (source / "test_extra.py").write_text("def test_extra():\n    assert True\n", encoding="utf-8")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "review-emptied")
+    (stage.root / "test_tracker.py").write_text("\n \n", encoding="utf-8")
+    tracker = stage.root / "tracker.py"
+    tracker.write_text(tracker.read_text(encoding="utf-8") + "\n# touched\n", encoding="utf-8")
+
+    checks = run_checks(stage.root)
+    review = run_review(stage, checks, ScriptedProvider([]))
+
+    assert checks.passed is True
+    assert review["passed"] is False
+    assert any("emptied" in finding for finding in review["findings"])

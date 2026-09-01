@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness.fs import iter_files
+from harness.fs import iter_files, read_text
 from harness.isolation import Stage
 from harness.provider import Provider
 from harness.verification import Verification
@@ -35,6 +35,7 @@ def inspect_change(stage: Stage) -> list[str]:
     impl_changed = [name for name in files if not _is_test_path(name)]
     tests_changed = [name for name in files if _is_test_path(name)]
     deleted_tests = [name for name in tests_changed if not (stage.root / name).exists()]
+    emptied_tests = [name for name in tests_changed if _is_empty(stage.root / name)]
     if not files and not diff:
         findings.append("review found no isolated change")
     if tests_changed and not impl_changed:
@@ -42,7 +43,16 @@ def inspect_change(stage: Stage) -> list[str]:
     if deleted_tests:
         # Deleting a failing test is the cheapest way to make checks green.
         findings.append("tests were deleted: " + ", ".join(sorted(deleted_tests)))
+    if emptied_tests:
+        findings.append("tests were emptied: " + ", ".join(sorted(emptied_tests)))
     return findings
+
+
+def _is_empty(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = read_text(path)
+    return text is not None and not text.strip()
 
 
 def run_review(stage: Stage, verification: Verification, provider: Provider) -> dict:

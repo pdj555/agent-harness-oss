@@ -57,7 +57,7 @@ flag is computed from the isolated diff, not from pytest's exit code:
 - tests must still exist in the stage
 - there must be an isolated change
 - tests may not change unless an implementation file also changed
-- no test file may be deleted, even beside a real implementation change
+- no test file may be deleted or emptied, even beside a real implementation change
 
 Tests are recognized by convention in any language: a `tests/`, `test/`,
 `spec/`, or `__tests__/` directory, a `test_`/`spec_` prefix, or a `_test.`,

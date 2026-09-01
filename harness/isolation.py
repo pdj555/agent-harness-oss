@@ -13,14 +13,15 @@ class IsolationError(Exception):
     pass
 
 
-# Directories the harness or a build creates in the stage. They are not the
-# agent's change, so they never enter status, diff, or publish.
+# Directories that are never the agent's work: caches, dependency trees, and
+# the `.home` a run creates. They are not copied into a stage, and they never
+# enter status, diff, or publish. `harness.fs` hides the same set from tools,
+# so the agent cannot read what it cannot ship.
 STAGE_NOISE_DIRS = frozenset({".home"}) | SKIP_DIRS
 # Long-form pathspec magic: the short `:!name` form misreads a leading underscore.
 NOISE_PATHSPECS = tuple(f":(exclude){name}" for name in sorted(STAGE_NOISE_DIRS))
 SCOPE = ("--", ".", *NOISE_PATHSPECS)
 
-COPY_SKIP_DIRS = {".git", ".harness", ".venv", "__pycache__", ".pytest_cache", "node_modules"}
 COPY_SKIP_FILES = {".env"}
 SAFE_ENV_SUFFIXES = {"example", "sample", "template"}
 
@@ -166,7 +167,7 @@ def _copy_ignores(_directory: str, names: list[str]) -> set[str]:
     return {
         name
         for name in names
-        if name in COPY_SKIP_DIRS or name in COPY_SKIP_FILES or _is_sensitive_env_file(Path(name))
+        if name in STAGE_NOISE_DIRS or name in COPY_SKIP_FILES or _is_sensitive_env_file(Path(name))
     }
 
 
