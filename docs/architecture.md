@@ -68,6 +68,11 @@ template env files remain available.
 file the agent created shows up for the reviewer, the UI, and the agent's own
 `git_diff`, not just in the changed-file list.
 
+Status, diff, and the changed-file list all exclude the scaffolding a run
+leaves in the stage - `.home`, caches, dependency trees - so nothing the
+harness created is ever reviewed or published. A git read that fails raises
+instead of reading as "nothing changed".
+
 A stage is a full worktree or copy, so they are kept by count: creating one
 removes all but the newest `data.keep_stages` (20 by default). Publishing reads
 the stage, so a run whose stage has been pruned reports that instead of

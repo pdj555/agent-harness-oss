@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -217,3 +218,36 @@ def test_the_diff_shows_files_the_agent_created(tmp_path: Path):
     assert "test_new_behavior.py" in stage.changed_files()
     stage.publish()
     assert (source / "test_new_behavior.py").is_file()
+
+
+def test_harness_scaffolding_and_caches_never_reach_the_source(tmp_path: Path):
+    source, original, stage = _stage(tmp_path)
+    cache = stage.root / ".home" / ".cache"
+    cache.mkdir(parents=True)
+    (cache / "tool.log").write_text("a tool wrote to HOME\n", encoding="utf-8")
+    (stage.root / "__pycache__").mkdir()
+    (stage.root / "__pycache__" / "tracker.pyc").write_bytes(b"\x00compiled")
+    (stage.root / "tracker.py").write_text(
+        original.replace('return "low"', 'return "high"', 1), encoding="utf-8"
+    )
+
+    changed = stage.changed_files()
+    diff = stage.diff()
+    stage.publish()
+
+    assert changed == ["tracker.py"]
+    assert ".home" not in diff and "__pycache__" not in diff
+    assert not (source / ".home").exists()
+    assert not (source / "__pycache__").exists()
+    assert 'return "high"' in (source / "tracker.py").read_text(encoding="utf-8")
+
+
+def test_a_failed_git_read_is_raised_rather_than_read_as_no_change(tmp_path: Path, monkeypatch):
+    _source, _original, stage = _stage(tmp_path)
+
+    def failing(args, cwd):
+        return subprocess.CompletedProcess(args, 128, "", "fatal: not a git repository")
+
+    monkeypatch.setattr("harness.isolation.git", failing)
+    with pytest.raises(IsolationError, match="not a git repository"):
+        stage.changed_files()

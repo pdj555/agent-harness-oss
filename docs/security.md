@@ -52,6 +52,13 @@ subprocesses use a filtered environment and `core.hooksPath=/dev/null`.
 The verification command runs the same way: filtered environment, `cwd` in the
 stage, no shell. Only `harness.toml` can change it.
 
+## Publish
+
+`Stage.publish` copies only the paths the stage reports as changed, refuses any
+destination that resolves outside the source tree, and never carries the
+harness's own scaffolding (`.home`, caches, dependency trees) into a real
+repository.
+
 ## Provider requests
 
 A vendor call retries only what is worth retrying: rate limits, gateway

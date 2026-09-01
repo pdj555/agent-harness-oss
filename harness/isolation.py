@@ -6,10 +6,19 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness.fs import SKIP_DIRS
+
 
 class IsolationError(Exception):
     pass
 
+
+# Directories the harness or a build creates in the stage. They are not the
+# agent's change, so they never enter status, diff, or publish.
+STAGE_NOISE_DIRS = frozenset({".home"}) | SKIP_DIRS
+# Long-form pathspec magic: the short `:!name` form misreads a leading underscore.
+NOISE_PATHSPECS = tuple(f":(exclude){name}" for name in sorted(STAGE_NOISE_DIRS))
+SCOPE = ("--", ".", *NOISE_PATHSPECS)
 
 COPY_SKIP_DIRS = {".git", ".harness", ".venv", "__pycache__", ".pytest_cache", "node_modules"}
 COPY_SKIP_FILES = {".env"}
@@ -197,7 +206,7 @@ class Stage:
     root: Path
 
     def status(self) -> str:
-        result = git(["status", "--short"], self.root)
+        result = git(["status", "--short", *SCOPE], self.root)
         return (result.stdout or "") + (result.stderr or "")
 
     def diff(self) -> str:
@@ -208,8 +217,10 @@ class Stage:
         own work. `--intent-to-add` registers new paths without staging
         content, which is enough for diff to render them.
         """
-        git(["add", "--intent-to-add", "--", "."], self.root)
-        result = git(["diff", "--", "."], self.root)
+        git(["add", "--intent-to-add", *SCOPE], self.root)
+        result = git(["diff", *SCOPE], self.root)
+        if result.returncode != 0:
+            raise IsolationError(result.stderr.strip() or "git diff failed in the stage")
         return result.stdout or ""
 
     def changed_files(self) -> list[str]:
@@ -219,8 +230,11 @@ class Stage:
         `-uall` names each new file instead of its directory, and `-z` keeps
         paths with spaces intact, so publish can act on the list verbatim.
         """
-        result = git(["status", "--porcelain", "-z", "-uall"], self.root)
-        return _parse_porcelain(result.stdout or "")
+        result = git(["status", "--porcelain", "-z", "-uall", *SCOPE], self.root)
+        if result.returncode != 0:
+            # Reading this wrong would look like "nothing changed" and publish nothing.
+            raise IsolationError(result.stderr.strip() or "git status failed in the stage")
+        return [name for name in _parse_porcelain(result.stdout or "") if not _is_noise(name)]
 
     def publish(self) -> None:
         source_root = self.source.resolve()
@@ -239,6 +253,10 @@ class Stage:
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
+
+
+def _is_noise(rel: str) -> bool:
+    return any(part in STAGE_NOISE_DIRS for part in Path(rel).parts)
 
 
 def _parse_porcelain(raw: str) -> list[str]:
