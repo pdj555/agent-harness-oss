@@ -237,3 +237,20 @@ def test_a_blank_pattern_lists_everything_instead_of_nothing(tmp_path: Path):
         "search", {"query": "classify_priority", "pattern": "  "}, stage=stage, role="principal"
     )
     assert "tracker.py" in scoped
+
+
+def test_git_diff_reports_a_written_file_back_to_the_agent(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    execute(
+        "write_file",
+        {"path": "helpers.py", "content": "def helper():\n    return 42\n"},
+        stage=stage,
+        role="principal",
+    )
+
+    diff = execute("git_diff", {}, stage=stage, role="principal")
+    status = execute("git_status", {}, stage=stage, role="principal")
+
+    assert "helpers.py" in diff
+    assert "return 42" in diff
+    assert "helpers.py" in status

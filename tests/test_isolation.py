@@ -202,3 +202,18 @@ def test_retention_never_removes_the_stage_being_created(tmp_path: Path):
     assert stage.root.is_dir()
     assert (stage.root / "tracker.py").is_file()
     assert sorted(path.name for path in stages.iterdir() if path.is_dir()) == ["run-new"]
+
+
+def test_the_diff_shows_files_the_agent_created(tmp_path: Path):
+    source, _original, stage = _stage(tmp_path)
+    (stage.root / "test_new_behavior.py").write_text(
+        "def test_new_behavior():\n    assert True\n", encoding="utf-8"
+    )
+
+    diff = stage.diff()
+
+    assert "test_new_behavior.py" in diff
+    assert "assert True" in diff
+    assert "test_new_behavior.py" in stage.changed_files()
+    stage.publish()
+    assert (source / "test_new_behavior.py").is_file()

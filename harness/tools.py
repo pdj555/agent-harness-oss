@@ -15,14 +15,14 @@ from harness.authority import (
     resolve_in_root,
 )
 from harness.fs import iter_files, read_text
-from harness.isolation import Stage, git
+from harness.isolation import Stage
 
 LIST_LIMIT = 400
 SEARCH_LIMIT = 50
 LINE_LIMIT = 200
 READ_LINE_LIMIT = 800
 READ_MAX_BYTES = 4_000_000
-SHELL_TIMEOUT = 60
+SHELL_TIMEOUT = 120
 SHELL_OUTPUT_LIMIT = 20_000
 
 
@@ -58,9 +58,9 @@ def execute(
     if name == "run_shell":
         return _run_shell(stage.root, str(args.get("command") or ""), shell_timeout)
     if name == "git_status":
-        return _git(["status", "--short"], stage.root)
+        return stage.status().strip() or "(no changes)"
     if name == "git_diff":
-        return _git(["diff", "--", "."], stage.root)
+        return stage.diff().strip() or "(no changes)"
     if name == "delegate":
         if helper is None:
             raise ToolError("delegation is unavailable")
@@ -321,11 +321,6 @@ def _run_shell(root: Path, command: str, timeout: int = SHELL_TIMEOUT) -> str:
     if len(output) > SHELL_OUTPUT_LIMIT:
         output = output[-SHELL_OUTPUT_LIMIT:]
     return f"exit {proc.returncode}\n{output}"
-
-
-def _git(args: list[str], cwd: Path) -> str:
-    proc = git(args, cwd)
-    return ((proc.stdout or "") + (proc.stderr or "")).strip()
 
 
 def software_helper(objective: str, stage: Stage) -> str:

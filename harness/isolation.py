@@ -201,6 +201,14 @@ class Stage:
         return (result.stdout or "") + (result.stderr or "")
 
     def diff(self) -> str:
+        """The stage's change, including files the agent created.
+
+        A plain `git diff` shows tracked files only, so a new test or module
+        would be invisible to the reviewer, the UI, and the model reading its
+        own work. `--intent-to-add` registers new paths without staging
+        content, which is enough for diff to render them.
+        """
+        git(["add", "--intent-to-add", "--", "."], self.root)
         result = git(["diff", "--", "."], self.root)
         return result.stdout or ""
 
