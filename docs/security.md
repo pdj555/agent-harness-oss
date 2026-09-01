@@ -47,6 +47,13 @@ replaces `python3` with the current interpreter, and passes a filtered
 environment without provider credentials. Timeout is 60 seconds. Git
 subprocesses use a filtered environment and `core.hooksPath=/dev/null`.
 
+## Credential redaction
+
+`harness.config.redact` removes environment values whose variable name reads
+like a credential (key, token, secret, password) from prompts sent to a
+provider and from tool output stored on a run. It covers every such variable
+in the environment, not a fixed list of the ones this harness sets.
+
 This is not an OS sandbox. A live model that can run Python can still touch
 the host as the same user. Treat live vendors as code execution. Bind to
 loopback. Keep `workspace.roots` small.

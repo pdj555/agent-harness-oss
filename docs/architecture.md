@@ -22,6 +22,7 @@ browser  ->  auth  ->  app  ->  runtime  ->  provider
 | `harness/app.py` | HTTP API and static workspace |
 | `harness/config.py` | allowlisted roots, provider name, data dir |
 | `harness/authority.py` | path and role checks |
+| `harness/fs.py` | one pruning file walk and text guard |
 | `harness/isolation.py` | Git worktree / copied git stage, publish |
 | `harness/tools.py` | list, search, read, edit, shell, git, delegate |
 | `harness/provider.py` | provider protocol; deterministic and OpenAI-compatible |
@@ -69,6 +70,12 @@ When the model stops proposing tool calls, the runtime runs
 `run_checks(stage.root)`. That function executes pytest in the stage with a
 filtered environment. The boolean `passed` comes from the process exit code.
 There is no parameter for a model claim.
+
+`run_checks` returns evidence for every outcome instead of raising: a red
+suite, a suite that outruns `check_timeout` (300 seconds by default), a suite
+that cannot start, and a repository that collects no tests all come back as
+`passed: false` with output that says which happened. A run therefore always
+reaches a verdict a person can read; it never stalls in `running`.
 
 Completion also requires an independent review record (`role: reviewer`) whose
 summary is not the principal's final text.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from harness.fs import iter_files
 from harness.isolation import Stage
 from harness.provider import Provider
 from harness.verification import Verification
@@ -18,14 +19,11 @@ def _is_test_path(rel: str) -> bool:
 
 
 def _test_files(root: Path) -> list[Path]:
-    found: list[Path] = []
-    for path in root.rglob("*.py"):
-        rel = path.relative_to(root)
-        if any(part in {".git", ".harness", "__pycache__"} for part in rel.parts):
-            continue
-        if _is_test_path(str(rel)):
-            found.append(path)
-    return found
+    return [
+        path
+        for path in iter_files(root)
+        if path.suffix == ".py" and _is_test_path(str(path.relative_to(root)))
+    ]
 
 
 def inspect_change(stage: Stage) -> list[str]:

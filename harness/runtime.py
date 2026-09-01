@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 
-from harness.authority import PathDenied, PermissionDenied
-from harness.config import Config
+from harness.authority import MUTATING_TOOLS, PathDenied, PermissionDenied
+from harness.config import Config, redact
 from harness.isolation import IsolationError, create_stage
 from harness.leverage import scan as leverage_scan
 from harness.provider import Completion, Provider
@@ -30,6 +30,9 @@ DEFAULT_PLAN = [
     "Prove it with the project's tests",
     "Independent review",
 ]
+
+TOOL_OUTPUT_LIMIT = 8000
+EVENT_LIMIT = 2000
 
 NEXT_DOLLAR = (
     "Find the highest-leverage change that increases revenue or stops a loss, "
@@ -122,7 +125,7 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         investigating="Ranking leverage from tests, markers, and recent commits.",
         active_work="Software scan",
     )
-    store.add_event(run_id, "evidence", scan_text[:2000])
+    store.add_event(run_id, "evidence", scan_text[:EVENT_LIMIT])
 
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM},
@@ -185,21 +188,21 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                     store.add_event(
                         run_id, "action", _human_action(call.name, call.arguments)
                     )
-                    if call.name in {"edit_file", "run_shell", "git_diff", "git_status"}:
+                    if call.name in MUTATING_TOOLS:
                         store.update_run(
                             run_id,
                             files_changed=stage.changed_files(),
                             diff=stage.diff(),
                         )
                     if call.name in {"git_diff", "git_status"}:
-                        store.add_event(run_id, "artifact", output[:2000])
+                        store.add_event(run_id, "artifact", output[:EVENT_LIMIT])
                     messages.append(
                         {
                             "role": "tool",
                             "name": call.name,
                             "tool_call_id": call.id,
                             "arguments": call.arguments or {},
-                            "content": _redact(output)[:8000],
+                            "content": redact(output)[:TOOL_OUTPUT_LIMIT],
                         }
                     )
                 except (PathDenied, PermissionDenied, ToolError) as exc:
@@ -217,28 +220,48 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
             continue
 
         store.update_run(run_id, active_work="Running verification.")
-        evidence = run_checks(stage.root)
-        files = stage.changed_files()
-        diff = stage.diff()
-        store.update_run(
-            run_id,
-            verification=evidence.as_dict(),
-            files_changed=files,
-            diff=diff,
-            checks=[evidence.as_dict()],
-        )
-        store.add_event(
-            run_id,
-            "evidence",
-            f"verification passed={evidence.passed} exit={evidence.exit_code}",
-        )
-        review = run_review(stage, evidence, provider)
+        try:
+            evidence = run_checks(stage.root, timeout=config.check_timeout)
+            files = stage.changed_files()
+            diff = stage.diff()
+            store.update_run(
+                run_id,
+                verification=evidence.as_dict(),
+                files_changed=files,
+                diff=diff,
+                checks=[evidence.as_dict()],
+            )
+            store.add_event(
+                run_id,
+                "evidence",
+                f"verification passed={evidence.passed} exit={evidence.exit_code}",
+            )
+            review = run_review(stage, evidence, provider)
+        except Exception as exc:
+            store.update_run(
+                run_id,
+                status="failed",
+                result=f"Verification could not complete: {exc}",
+                blockers=["verification error"],
+                active_work="",
+            )
+            return
         store.update_run(run_id, review=review)
         store.add_event(run_id, "decision", review["summary"])
 
         if evidence.passed and review.get("passed"):
             if config.auto_publish:
-                stage.publish()
+                try:
+                    stage.publish()
+                except Exception as exc:
+                    store.update_run(
+                        run_id,
+                        status="failed",
+                        result=f"Publishing the verified change failed: {exc}",
+                        blockers=["publish"],
+                        active_work="",
+                    )
+                    return
                 store.add_event(run_id, "result", "Published verified files into the selected repository.")
             result_text = (
                 completion.text.strip()
@@ -329,18 +352,3 @@ def _human_action(name: str, arguments: dict | None) -> str:
     if name == "delegate":
         return f"Delegated: {str(args.get('objective') or '')[:80]}"
     return name
-
-
-def _brief(arguments: dict | None) -> str:
-    if not arguments:
-        return ""
-    path = arguments.get("path") or arguments.get("command") or arguments.get("query") or ""
-    return str(path)[:120]
-
-
-def _redact(text: str) -> str:
-    for name in ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"):
-        key = os.environ.get(name)
-        if key:
-            text = text.replace(key, "[redacted]")
-    return text

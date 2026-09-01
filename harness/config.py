@@ -10,6 +10,9 @@ from typing import Any
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SAMPLE = PACKAGE_ROOT / "examples" / "sample-repo"
 
+SECRET_ENV_HINTS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL")
+MIN_SECRET_LENGTH = 12
+
 
 def _load_dotenv() -> None:
     if os.environ.get("PYTEST_CURRENT_TEST"):
@@ -39,7 +42,32 @@ class Config:
     auto_publish: bool = False
     max_steps: int = 24
     max_repairs: int = 2
+    check_timeout: int = 300
     provider_instance: Any = None
+
+
+def secret_values() -> list[str]:
+    """Environment values that must never reach a prompt, an event, or an artifact.
+
+    Any variable whose name reads like a credential counts, not just the few
+    this harness sets itself. Longest first, so an embedded secret is replaced
+    before a value that merely contains it.
+    """
+    found = set()
+    for name, value in os.environ.items():
+        upper = name.upper()
+        if not any(hint in upper for hint in SECRET_ENV_HINTS):
+            continue
+        cleaned = (value or "").strip()
+        if len(cleaned) >= MIN_SECRET_LENGTH:
+            found.add(cleaned)
+    return sorted(found, key=len, reverse=True)
+
+
+def redact(text: str) -> str:
+    for value in secret_values():
+        text = text.replace(value, "[redacted]")
+    return text
 
 
 def has_live_key() -> bool:

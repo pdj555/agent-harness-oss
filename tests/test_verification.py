@@ -60,3 +60,32 @@ def test_real_fix_makes_verification_pass(tmp_path: Path):
     result = run_checks(stage.root)
     assert result.passed is True
     assert result.exit_code == 0
+
+
+def test_a_hung_suite_returns_evidence_instead_of_raising(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    (source / "test_slow.py").write_text(
+        "import time\n\n\ndef test_slow():\n    time.sleep(30)\n", encoding="utf-8"
+    )
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-timeout")
+
+    result = run_checks(stage.root, timeout=2)
+
+    assert result.passed is False
+    assert result.exit_code != 0
+    assert "timed out" in result.output.lower()
+
+
+def test_a_repository_without_tests_cannot_pass_verification(tmp_path: Path):
+    source = tmp_path / "empty"
+    source.mkdir()
+    (source / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-no-tests")
+
+    result = run_checks(stage.root)
+
+    assert result.passed is False
+    assert "collected no tests" in result.output.lower()
+    assert "add a test" in result.output.lower()

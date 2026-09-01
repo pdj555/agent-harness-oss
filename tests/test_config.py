@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness.config import add_extra_root, has_live_key, load_config, load_extra_roots
+from harness.config import (
+    add_extra_root,
+    has_live_key,
+    load_config,
+    load_extra_roots,
+    redact,
+    secret_values,
+)
 from harness.provider import live_endpoint
 
 
@@ -45,3 +52,23 @@ def test_demo_path_keeps_deterministic_without_env_override(tmp_path: Path, monk
     monkeypatch.delenv("HARNESS_PROVIDER", raising=False)
     config = load_config(prefer_live=False)
     assert config.provider_name == "deterministic"
+
+
+def test_any_credential_shaped_variable_is_redacted(monkeypatch):
+    monkeypatch.setenv("OLLAMA_API_KEY", "ollama-secret-value-123")
+    monkeypatch.setenv("VENDOR_ACCESS_TOKEN", "token-secret-value-456")
+    monkeypatch.setenv("HARNESS_MODEL", "gpt-oss:20b")
+
+    cleaned = redact(
+        "key=ollama-secret-value-123 token=token-secret-value-456 model=gpt-oss:20b"
+    )
+
+    assert "ollama-secret-value-123" not in cleaned
+    assert "token-secret-value-456" not in cleaned
+    assert "gpt-oss:20b" in cleaned
+
+
+def test_short_values_are_not_treated_as_secrets(monkeypatch):
+    monkeypatch.setenv("SOME_KEY", "short")
+
+    assert "short" not in secret_values()

@@ -16,7 +16,8 @@ COPY_SKIP_FILES = {".env"}
 SAFE_ENV_SUFFIXES = {"example", "sample", "template"}
 
 
-def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+def git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    """Run git with no user config, no hooks, and no credential prompts."""
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -35,7 +36,7 @@ def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _is_git_root(path: Path) -> bool:
-    probe = _git(["rev-parse", "--show-toplevel"], path)
+    probe = git(["rev-parse", "--show-toplevel"], path)
     if probe.returncode != 0:
         return False
     top = Path(probe.stdout.strip()).resolve()
@@ -45,11 +46,11 @@ def _is_git_root(path: Path) -> bool:
 def ensure_git_repo(path: Path) -> None:
     if _is_git_root(path):
         return
-    init = _git(["init"], path)
+    init = git(["init"], path)
     if init.returncode != 0:
         raise IsolationError(init.stderr.strip() or "git init failed")
-    _git(["add", "-A"], path)
-    commit = _git(
+    git(["add", "-A"], path)
+    commit = git(
         [
             "-c",
             "user.email=harness@localhost",
@@ -77,7 +78,7 @@ def create_stage(source: Path, stages_dir: Path, run_id: str) -> Stage:
     elif root.exists():
         shutil.rmtree(root)
     if is_git_root:
-        added = _git(["worktree", "add", "--detach", str(root)], source)
+        added = git(["worktree", "add", "--detach", str(root)], source)
         if added.returncode != 0:
             raise IsolationError(added.stderr.strip() or "git worktree add failed")
         try:
@@ -103,7 +104,7 @@ def create_stage(source: Path, stages_dir: Path, run_id: str) -> Stage:
 
 
 def _overlay_working_tree(source: Path, root: Path) -> None:
-    listed = _git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], source)
+    listed = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], source)
     if listed.returncode != 0:
         raise IsolationError(listed.stderr.strip() or "git ls-files failed")
     for raw in listed.stdout.split("\0"):
@@ -147,8 +148,8 @@ def _is_sensitive_env_file(path: Path) -> bool:
 
 def _remove_worktree(source: Path, root: Path) -> None:
     if root.exists():
-        _git(["worktree", "remove", "--force", str(root)], source)
-    _git(["worktree", "prune"], source)
+        git(["worktree", "remove", "--force", str(root)], source)
+    git(["worktree", "prune"], source)
     if root.exists():
         shutil.rmtree(root)
 
@@ -172,36 +173,58 @@ class Stage:
     root: Path
 
     def status(self) -> str:
-        result = _git(["status", "--short"], self.root)
+        result = git(["status", "--short"], self.root)
         return (result.stdout or "") + (result.stderr or "")
 
     def diff(self) -> str:
-        result = _git(["diff", "--", "."], self.root)
+        result = git(["diff", "--", "."], self.root)
         return result.stdout or ""
 
     def changed_files(self) -> list[str]:
-        result = _git(["diff", "--name-only", "--", "."], self.root)
-        names = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
-        porcelain = _git(["status", "--short"], self.root)
-        for line in (porcelain.stdout or "").splitlines():
-            name = line[3:].strip()
-            if name and name not in names:
-                names.append(name)
-        return names
+        """Every path the stage added, edited, renamed, or deleted.
+
+        One porcelain read covers staged, unstaged, and untracked work.
+        `-uall` names each new file instead of its directory, and `-z` keeps
+        paths with spaces intact, so publish can act on the list verbatim.
+        """
+        result = git(["status", "--porcelain", "-z", "-uall"], self.root)
+        return _parse_porcelain(result.stdout or "")
 
     def publish(self) -> None:
+        source_root = self.source.resolve()
         for rel in self.changed_files():
             src = self.root / rel
             dest = self.source / rel
-            if not src.exists():
-                if dest.exists():
-                    dest.unlink()
-                continue
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest = dest.resolve()
             try:
-                dest.relative_to(self.source.resolve())
+                (dest.parent.resolve() / dest.name).relative_to(source_root)
             except ValueError as exc:
                 raise IsolationError(f"refusing to publish outside the source tree: {rel}") from exc
-            if src.is_file():
-                shutil.copy2(src, dest)
+            if not src.exists():
+                if dest.is_file() or dest.is_symlink():
+                    dest.unlink()
+                continue
+            if not src.is_file():
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+
+
+def _parse_porcelain(raw: str) -> list[str]:
+    """Read `git status --porcelain -z` entries, including both sides of a rename."""
+    fields = raw.split("\0")
+    names: list[str] = []
+    index = 0
+    while index < len(fields):
+        entry = fields[index]
+        index += 1
+        if len(entry) < 4:
+            continue
+        status, path = entry[:2], entry[3:]
+        if "R" in status or "C" in status:
+            origin = fields[index] if index < len(fields) else ""
+            index += 1
+            if origin and origin not in names:
+                names.append(origin)
+        if path and path not in names:
+            names.append(path)
+    return names

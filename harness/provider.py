@@ -7,6 +7,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from harness.config import redact
+
 
 @dataclass
 class ToolCall:
@@ -426,17 +428,10 @@ def _shell_passed(content: str) -> bool:
 
 
 def _openai_messages(messages: list[dict]) -> list[dict]:
-    secrets = []
-    for name in ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"):
-        value = os.environ.get(name)
-        if value:
-            secrets.append(value)
     clean: list[dict] = []
     for message in messages:
         role = message.get("role")
-        content = message.get("content") or ""
-        for key in secrets:
-            content = content.replace(key, "[redacted]")
+        content = redact(message.get("content") or "")
         if role == "assistant" and message.get("tool_calls"):
             clean.append(
                 {

@@ -14,9 +14,14 @@ from harness.authority import (
     allow_tool,
     resolve_in_root,
 )
-from harness.isolation import Stage
+from harness.fs import iter_files, read_text
+from harness.isolation import Stage, git
 
-SKIP_DIRS = {".git", ".harness", "__pycache__", ".pytest_cache", "node_modules"}
+LIST_LIMIT = 400
+SEARCH_LIMIT = 50
+LINE_LIMIT = 200
+SHELL_TIMEOUT = 60
+SHELL_OUTPUT_LIMIT = 20_000
 
 
 class ToolError(Exception):
@@ -141,11 +146,14 @@ def tool_specs(role: str) -> list[dict]:
 
 def _list_files(root: Path, pattern: str) -> str:
     matches: list[str] = []
-    for path in sorted(root.rglob(pattern)):
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+    for path in iter_files(root):
+        rel = path.relative_to(root)
+        if not rel.match(pattern):
             continue
-        if path.is_file():
-            matches.append(str(path.relative_to(root)))
+        matches.append(str(rel))
+        if len(matches) >= LIST_LIMIT:
+            matches.append(f"(stopped at {LIST_LIMIT} files; narrow the pattern)")
+            break
     return "\n".join(matches) if matches else "(no files)"
 
 
@@ -154,22 +162,25 @@ def _search(root: Path, query: str) -> str:
         raise ToolError("search query is required")
     hits: list[str] = []
     needle = query.lower()
-    for path in root.rglob("*"):
-        rel_parts = path.relative_to(root).parts
-        if any(part in SKIP_DIRS for part in rel_parts):
+    truncated = False
+    for path in iter_files(root):
+        text = read_text(path)
+        if text is None:
             continue
-        if not path.is_file():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
+        rel = path.relative_to(root)
         for number, line in enumerate(text.splitlines(), start=1):
             if needle in line.lower():
-                hits.append(f"{path.relative_to(root)}:{number}:{line.strip()}")
-                if len(hits) >= 50:
-                    return "\n".join(hits)
-    return "\n".join(hits) if hits else "(no matches)"
+                hits.append(f"{rel}:{number}:{line.strip()[:LINE_LIMIT]}")
+                if len(hits) >= SEARCH_LIMIT:
+                    truncated = True
+                    break
+        if truncated:
+            break
+    if not hits:
+        return "(no matches)"
+    if truncated:
+        hits.append(f"(stopped at {SEARCH_LIMIT} matches; narrow the query)")
+    return "\n".join(hits)
 
 
 def _edit_file(root: Path, args: dict) -> str:
@@ -211,34 +222,22 @@ def _run_shell(root: Path, command: str) -> str:
             cwd=root,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=SHELL_TIMEOUT,
             env=env,
             check=False,
         )
     except FileNotFoundError as exc:
         raise ToolError(str(exc)) from exc
     except subprocess.TimeoutExpired as exc:
-        raise ToolError("command timed out") from exc
+        raise ToolError(f"command timed out after {SHELL_TIMEOUT}s") from exc
     output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    if len(output) > SHELL_OUTPUT_LIMIT:
+        output = output[-SHELL_OUTPUT_LIMIT:]
     return f"exit {proc.returncode}\n{output}"
 
 
 def _git(args: list[str], cwd: Path) -> str:
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_TERMINAL_PROMPT": "0",
-        "HOME": str(cwd),
-    }
-    proc = subprocess.run(
-        ["git", "-c", "core.hooksPath=/dev/null", *args],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    proc = git(args, cwd)
     return ((proc.stdout or "") + (proc.stderr or "")).strip()
 
 

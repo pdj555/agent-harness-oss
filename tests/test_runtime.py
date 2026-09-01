@@ -226,3 +226,18 @@ def test_failed_check_is_a_failure_state_not_completion(tmp_path: Path):
     assert run.status == "failed"
     assert run.verification is not None
     assert run.verification["passed"] is False
+
+
+def test_a_broken_verification_step_fails_the_run_instead_of_hanging(tmp_path: Path, monkeypatch):
+    store, config, run_id = _setup(tmp_path)
+
+    def explode(*args, **kwargs):
+        raise OSError("checks exploded")
+
+    monkeypatch.setattr("harness.runtime.run_checks", explode)
+    execute_run(run_id, store=store, config=config, provider=ScriptedProvider([Completion(text="done")]))
+
+    run = store.get_run(run_id)
+    assert run.status == "failed"
+    assert "checks exploded" in (run.result or "")
+    assert run.blockers == ["verification error"]

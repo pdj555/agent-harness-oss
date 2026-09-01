@@ -73,3 +73,38 @@ def test_reviewer_cannot_edit(tmp_path: Path):
         assert "reviewer" in str(exc).lower() or "permission" in str(exc).lower()
     else:
         raise AssertionError("reviewer must not edit")
+
+
+def test_listing_and_search_ignore_dependency_and_cache_trees(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    vendored = stage.root / "node_modules" / "left-pad" / "index.js"
+    vendored.parent.mkdir(parents=True)
+    vendored.write_text("classify_priority = 'vendored noise'\n", encoding="utf-8")
+    cached = stage.root / "__pycache__" / "tracker.cpython-313.pyc"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"\x00\x01binary classify_priority")
+    environment = stage.root / ".venv" / "lib" / "site.py"
+    environment.parent.mkdir(parents=True)
+    environment.write_text("classify_priority = 'installed dependency'\n", encoding="utf-8")
+
+    listed = execute("list_files", {"pattern": "*"}, stage=stage, role="principal")
+    found = execute("search", {"query": "classify_priority"}, stage=stage, role="principal")
+
+    assert "tracker.py" in listed
+    assert "node_modules" not in listed
+    assert "__pycache__" not in listed
+    assert ".venv" not in listed
+    assert "node_modules" not in found
+    assert ".venv" not in found
+    assert "tracker.py" in found
+
+
+def test_search_says_when_it_stopped_early(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    (stage.root / "many.py").write_text("needle = 1\n" * 200, encoding="utf-8")
+
+    found = execute("search", {"query": "needle"}, stage=stage, role="principal")
+
+    lines = found.splitlines()
+    assert len(lines) <= 51
+    assert "narrow the query" in lines[-1]

@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from harness.isolation import IsolationError, create_stage
+from harness.isolation import IsolationError, create_stage, git
 from tests.helpers import copy_sample, git_init
 
 
@@ -138,3 +138,39 @@ def test_stage_rejects_symlinks_that_escape_the_worktree(tmp_path: Path, git_sta
         create_stage(source, tmp_path / "stages", "run-symlink")
 
     assert not (tmp_path / "stages" / "run-symlink").exists()
+
+
+def test_publish_carries_new_files_in_new_directories(tmp_path: Path):
+    source, _original, stage = _stage(tmp_path)
+    added = stage.root / "pkg" / "helpers.py"
+    added.parent.mkdir()
+    added.write_text("def helper():\n    return 1\n", encoding="utf-8")
+
+    assert "pkg/helpers.py" in stage.changed_files()
+    stage.publish()
+
+    assert (source / "pkg" / "helpers.py").read_text(encoding="utf-8") == "def helper():\n    return 1\n"
+
+
+def test_publish_applies_a_rename_on_both_sides(tmp_path: Path):
+    source, original, stage = _stage(tmp_path)
+    git(["mv", "tracker.py", "renamed_tracker.py"], stage.root)
+
+    changed = stage.changed_files()
+    assert "tracker.py" in changed
+    assert "renamed_tracker.py" in changed
+
+    stage.publish()
+
+    assert not (source / "tracker.py").exists()
+    assert (source / "renamed_tracker.py").read_text(encoding="utf-8") == original
+
+
+def test_publish_handles_paths_containing_spaces(tmp_path: Path):
+    source, _original, stage = _stage(tmp_path)
+    (stage.root / "release notes.md").write_text("shipped\n", encoding="utf-8")
+
+    assert "release notes.md" in stage.changed_files()
+    stage.publish()
+
+    assert (source / "release notes.md").read_text(encoding="utf-8") == "shipped\n"
