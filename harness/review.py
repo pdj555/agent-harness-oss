@@ -34,10 +34,14 @@ def inspect_change(stage: Stage) -> list[str]:
         findings.append("no test files remain in the isolated worktree")
     impl_changed = [name for name in files if not _is_test_path(name)]
     tests_changed = [name for name in files if _is_test_path(name)]
+    deleted_tests = [name for name in tests_changed if not (stage.root / name).exists()]
     if not files and not diff:
         findings.append("review found no isolated change")
     if tests_changed and not impl_changed:
         findings.append("tests changed without an implementation change")
+    if deleted_tests:
+        # Deleting a failing test is the cheapest way to make checks green.
+        findings.append("tests were deleted: " + ", ".join(sorted(deleted_tests)))
     return findings
 
 

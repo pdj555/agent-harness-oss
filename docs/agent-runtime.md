@@ -57,6 +57,11 @@ flag is computed from the isolated diff, not from pytest's exit code:
 - tests must still exist in the stage
 - there must be an isolated change
 - tests may not change unless an implementation file also changed
+- no test file may be deleted, even beside a real implementation change
+
+Tests are recognized by convention in any language: a `tests/`, `test/`,
+`spec/`, or `__tests__/` directory, a `test_`/`spec_` prefix, or a `_test.`,
+`.test.`, `_spec.`, or `.spec.` marker in the filename.
 
 Completion requires **both** `verification.passed` and `review.passed`. Green
 checks with no implementation change do not complete. The review summary is

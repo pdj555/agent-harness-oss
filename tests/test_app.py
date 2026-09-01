@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -160,3 +161,28 @@ def test_browser_script_has_no_node_globals(app):
     assert "require(" not in source
     assert "module.exports" not in source
     assert "process.env" not in source
+
+
+def test_history_list_is_a_summary_without_run_payloads(client, app):
+    signup(client)
+    store = app.state.store
+    user = store.get_user_by_username("ada")
+    repo = store.list_repos(app.state.config.workspace_roots)[0]
+    run = store.create_run(user.id, repo.id, "Inspect this repository.")
+    store.update_run(
+        run.id,
+        diff="x" * 50_000,
+        events=[{"kind": "action", "detail": "y" * 10_000, "at": "2026-01-01T00:00:00Z"}],
+    )
+
+    body = client.get("/api/runs").json()
+    item = next(row for row in body["runs"] if row["id"] == run.id)
+
+    assert item["objective"] == "Inspect this repository."
+    assert item["status"] == "queued"
+    assert "diff" not in item
+    assert "events" not in item
+    assert len(json.dumps(body)) < 5_000
+
+    detail = client.get(f"/api/runs/{run.id}").json()
+    assert len(detail["diff"]) == 50_000

@@ -145,7 +145,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.get("/api/runs")
     def runs(request: Request) -> dict:
         user = current_user(request)
-        return {"runs": [run.public_dict() for run in store.list_runs(user.id)]}
+        return {"runs": store.list_run_summaries(user.id)}
 
     @app.post("/api/runs", status_code=201)
     def create_run(body: RunRequest, request: Request) -> dict:

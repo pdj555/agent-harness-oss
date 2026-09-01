@@ -204,6 +204,18 @@ class Store:
             ).fetchall()
         return [_run_from_row(row) for row in rows]
 
+    def list_run_summaries(self, user_id: str) -> list[dict]:
+        """History rows for the run list: columns only, so no diff is parsed or sent."""
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT id, objective, status, created_at, updated_at
+                FROM runs WHERE user_id = ? ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def request_stop(self, run_id: str) -> Run | None:
         run = self.get_run(run_id)
         if run is None:
