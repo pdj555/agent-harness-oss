@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 import subprocess
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from harness.environment import display_python, stage_runtime
 
 DEFAULT_COMMAND = ("python", "-m", "pytest", "-q")
 DEFAULT_TIMEOUT = 300
@@ -28,6 +28,7 @@ class Verification:
 def run_checks(
     stage_root: Path,
     *,
+    project_root: Path | None = None,
     command: list[str] | None = None,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> Verification:
@@ -38,18 +39,17 @@ def run_checks(
     returns evidence instead of raising, so a run always ends with a verdict a
     person can read.
 
-    The command defaults to pytest. An operator can name another one in
-    `harness.toml`; a model cannot, and neither can the repository under work.
+    The checks run with the project's own interpreter when its tree carries a
+    virtualenv, because a repository's tests need the repository's
+    dependencies. The command defaults to pytest. An operator can name another
+    one in `harness.toml`; a model cannot, and neither can the repository under
+    work.
     """
-    argv = _argv(command)
-    label = " ".join(str(part) for part in (command or DEFAULT_COMMAND))
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "HOME": str(stage_root / ".home"),
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    (stage_root / ".home").mkdir(exist_ok=True)
+    python, env = stage_runtime(stage_root, project_root)
+    argv = _argv(command, python)
+    label = " ".join(
+        str(part) for part in (command or (display_python(python, project_root), *DEFAULT_COMMAND[1:]))
+    )
     try:
         proc = subprocess.run(
             argv,
@@ -79,12 +79,12 @@ def run_checks(
     return _result(label, proc.returncode, output)
 
 
-def _argv(command: list[str] | None) -> list[str]:
+def _argv(command: list[str] | None, python: Path) -> list[str]:
     if not command:
-        return [sys.executable, "-m", "pytest", "-q"]
+        return [str(python), "-m", "pytest", "-q"]
     argv = [str(part) for part in command]
     if argv[0] in {"python", "python3"}:
-        argv[0] = sys.executable
+        argv[0] = str(python)
     return argv
 
 

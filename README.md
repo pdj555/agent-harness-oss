@@ -43,6 +43,8 @@ Paid OpenAI daily driver is **GPT-5.6 Luna** at `reasoning_effort=xhigh`
 ## Why this is not a chat demo
 
 - Models propose. The project's tests and independent review decide.
+- Those tests run with your project's own virtualenv, so a repository with real
+  dependencies is verified with them, not against the harness's.
 - Mutating work happens in a Git worktree. The source tree does not move
   until you apply a verified delta.
 - The browser cannot create accounts or open arbitrary files.

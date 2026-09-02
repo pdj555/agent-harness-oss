@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import os
 import shlex
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,6 +12,7 @@ from harness.authority import (
     allow_tool,
     resolve_in_root,
 )
+from harness.environment import stage_runtime
 from harness.fs import iter_files, read_text
 from harness.isolation import Stage
 
@@ -56,7 +55,7 @@ def execute(
     if name == "write_file":
         return _write_file(stage.root, args)
     if name == "run_shell":
-        return _run_shell(stage.root, str(args.get("command") or ""), shell_timeout)
+        return _run_shell(stage, str(args.get("command") or ""), shell_timeout)
     if name == "git_status":
         return stage.status().strip() or "(no changes)"
     if name == "git_diff":
@@ -285,7 +284,7 @@ def _edit_file(root: Path, args: dict) -> str:
     return f"updated {path.relative_to(root)}"
 
 
-def _run_shell(root: Path, command: str, timeout: int = SHELL_TIMEOUT) -> str:
+def _run_shell(stage: Stage, command: str, timeout: int = SHELL_TIMEOUT) -> str:
     if not command.strip():
         raise ToolError("command is required")
     try:
@@ -294,15 +293,11 @@ def _run_shell(root: Path, command: str, timeout: int = SHELL_TIMEOUT) -> str:
         raise ToolError(str(exc)) from exc
     if not parts:
         raise ToolError("command is required")
+    root = stage.root
+    # The agent checks its own work with the same interpreter verification uses.
+    python, env = stage_runtime(root, stage.source)
     if parts[0] in {"python", "python3"}:
-        parts[0] = sys.executable
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "HOME": str(root / ".home"),
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    (root / ".home").mkdir(exist_ok=True)
+        parts[0] = str(python)
     try:
         proc = subprocess.run(
             parts,

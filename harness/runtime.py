@@ -224,7 +224,10 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         store.update_run(run_id, active_work="Running verification.")
         try:
             evidence = run_checks(
-                stage.root, command=config.check_command, timeout=config.check_timeout
+                stage.root,
+                project_root=stage.source,
+                command=config.check_command,
+                timeout=config.check_timeout,
             )
             files = stage.changed_files()
             diff = stage.diff()

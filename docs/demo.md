@@ -49,7 +49,8 @@ files into the selected repository. The canonical sample under `examples/`
 remains the failing fixture until you apply.
 
 Verification is `python -m pytest -q` run in the stage with a filtered
-environment. The deterministic provider knows how to repair this sample; a
+environment, using the project's own virtualenv interpreter when it has one.
+The sample depends on nothing, so it runs on the harness interpreter. The deterministic provider knows how to repair this sample; a
 live vendor uses the same tools.
 
 ## Failure path

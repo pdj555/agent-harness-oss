@@ -22,6 +22,7 @@ browser  ->  auth  ->  app  ->  runtime  ->  provider
 | `harness/app.py` | HTTP API and static workspace |
 | `harness/config.py` | allowlisted roots, provider name, data dir |
 | `harness/authority.py` | path and role checks |
+| `harness/environment.py` | the interpreter and environment a stage runs |
 | `harness/fs.py` | one pruning file walk and text guard |
 | `harness/isolation.py` | Git worktree / copied git stage, publish |
 | `harness/tools.py` | list, search, read, edit, write, shell, git, delegate |
@@ -90,6 +91,19 @@ suite, a suite that outruns `check_timeout` (300 seconds by default), a suite
 that cannot start, and a repository that collects no tests all come back as
 `passed: false` with output that says which happened. A run therefore always
 reaches a verdict a person can read; it never stalls in `running`.
+
+Checks run with **the project's own interpreter**. A repository's tests need
+that repository's dependencies, and the harness interpreter has its own, so a
+real project would otherwise fail on its first import. When the source tree
+carries a virtualenv (`.venv`, `venv`, `.virtualenv`, `env`), its interpreter
+runs the checks with its `bin` directory first on PATH and `VIRTUAL_ENV` set;
+otherwise the harness interpreter runs them. Nothing about this is declared:
+software reads the tree.
+
+The virtualenv stays in the source tree and is never copied into the stage. The
+interpreter runs with the stage as its working directory, so the code under
+test is the isolated copy - including when the project is installed into that
+virtualenv in editable mode, which `tests/test_environment.py` pins.
 
 pytest is the default command. A project that proves itself another way names
 its command in `harness.toml`:

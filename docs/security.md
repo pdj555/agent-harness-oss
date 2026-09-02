@@ -44,8 +44,8 @@ creates. Git status and diff run with `cwd` set to the stage.
 ## Shell
 
 `run_shell` uses `shlex.split` (no `shell=True`), forces `cwd` to the stage,
-replaces `python3` with the current interpreter, and passes a filtered
-environment without provider credentials. The timeout is `shell_timeout`, 120
+replaces `python`/`python3` with the interpreter verification will use, and
+passes a filtered environment without provider credentials. The timeout is `shell_timeout`, 120
 seconds by default, so the agent can run the same suite verification runs. Git
 subprocesses use a filtered environment and `core.hooksPath=/dev/null`.
 
@@ -77,6 +77,11 @@ in the environment, not a fixed list of the ones this harness sets.
 This is not an OS sandbox. A live model that can run Python can still touch
 the host as the same user. Treat live vendors as code execution. Bind to
 loopback. Keep `workspace.roots` small.
+
+Checks and shell commands run the project's own interpreter when its tree has a
+virtualenv, and that virtualenv's `bin` leads PATH. Allowlisting a repository
+therefore means trusting its environment as well as its code - which running
+its test suite already required.
 
 ## Verification is not a tool the model owns
 
