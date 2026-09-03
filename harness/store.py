@@ -11,6 +11,8 @@ from uuid import uuid4
 
 from harness.auth import hash_session
 
+TERMINAL_STATUSES = frozenset({"completed", "failed", "stopped"})
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -205,32 +207,38 @@ class Store:
         return [_run_from_row(row) for row in rows]
 
     def request_stop(self, run_id: str) -> Run | None:
-        run = self.get_run(run_id)
-        if run is None:
-            return None
-        if run.status in {"completed", "failed", "stopped"}:
-            return run
-        return self.update_run(run_id, stop_requested=True, status="stopping")
+        with self._lock:
+            run = self.get_run(run_id)
+            if run is None:
+                return None
+            if run.status in TERMINAL_STATUSES:
+                return run
+            return self.update_run(run_id, stop_requested=True, status="stopping")
 
     def add_event(self, run_id: str, kind: str, detail: str) -> Run:
-        run = self.get_run(run_id)
-        if run is None:
-            raise KeyError(run_id)
-        events = list(run.events)
-        events.append({"kind": kind, "detail": detail, "at": _now()})
-        return self.update_run(run_id, events=events)
+        with self._lock:
+            run = self.get_run(run_id)
+            if run is None:
+                raise KeyError(run_id)
+            events = list(run.events)
+            events.append({"kind": kind, "detail": detail, "at": _now()})
+            return self.update_run(run_id, events=events)
 
     def update_run(self, run_id: str, **fields) -> Run:
-        run = self.get_run(run_id)
-        if run is None:
-            raise KeyError(run_id)
-        for key, value in fields.items():
-            if not hasattr(run, key):
-                raise AttributeError(key)
-            setattr(run, key, value)
-        run.updated_at = _now()
-        self._write_run(run, insert=False)
-        return run
+        # Read, modify, and write under one lock. The runtime thread and the HTTP
+        # thread both update the same row; an unlocked read-modify-write let a
+        # runtime write clobber a concurrent stop request.
+        with self._lock:
+            run = self.get_run(run_id)
+            if run is None:
+                raise KeyError(run_id)
+            for key, value in fields.items():
+                if not hasattr(run, key):
+                    raise AttributeError(key)
+                setattr(run, key, value)
+            run.updated_at = _now()
+            self._write_run(run, insert=False)
+            return run
 
     def _write_run(self, run: Run, insert: bool = True) -> None:
         payload = {

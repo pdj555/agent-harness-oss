@@ -20,6 +20,10 @@ queued -> running -> {completed | failed | stopped}
 8. If checks failed, append the captured output and let the principal repair,
    up to `max_repairs`. Then mark `failed`.
 
+Every exit lands in a terminal status. A provider error, a check that times
+out, or an unexpected exception inside the loop marks the run `failed` with a
+blocker; nothing is left in `running` for the UI to poll forever.
+
 Events recorded for the UI are actions, evidence, artifacts, decisions, and
 results. They are not a chain of thought dump.
 
@@ -51,7 +55,9 @@ never the principal's "done" text.
 
 `POST /api/runs/{id}/stop` sets `stop_requested`. The loop checks the flag
 before and after provider calls, and before each tool. A mutating call after
-stop raises and is recorded as skipped.
+stop raises and is recorded as skipped. The store performs every run update as
+one locked read-modify-write, so a runtime write in flight cannot overwrite a
+stop that arrived from the HTTP thread.
 
 ## Providers
 

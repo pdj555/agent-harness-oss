@@ -138,3 +138,35 @@ def test_stage_rejects_symlinks_that_escape_the_worktree(tmp_path: Path, git_sta
         create_stage(source, tmp_path / "stages", "run-symlink")
 
     assert not (tmp_path / "stages" / "run-symlink").exists()
+
+
+def test_shell_home_lives_beside_the_stage_not_inside_it(tmp_path: Path):
+    source, _original, stage = _stage(tmp_path)
+    home = stage.home()
+    assert home.is_dir()
+    assert home.parent == stage.root.parent
+    assert stage.root not in home.parents
+    (home / ".profile").write_text("written by a tool\n", encoding="utf-8")
+    assert stage.changed_files() == []
+    assert not (source / ".home").exists()
+
+
+def test_changed_files_lists_new_files_individually(tmp_path: Path):
+    _source, _original, stage = _stage(tmp_path)
+    (stage.root / "pkg" / "sub").mkdir(parents=True)
+    (stage.root / "pkg" / "sub" / "new.py").write_text("x = 1\n", encoding="utf-8")
+    (stage.root / "pkg" / "other.py").write_text("y = 2\n", encoding="utf-8")
+    changed = stage.changed_files()
+    assert "pkg/sub/new.py" in changed
+    assert "pkg/other.py" in changed
+    assert "pkg/" not in changed
+
+
+def test_publish_copies_new_nested_files_and_deletions(tmp_path: Path):
+    source, _original, stage = _stage(tmp_path)
+    (stage.root / "pkg" / "sub").mkdir(parents=True)
+    (stage.root / "pkg" / "sub" / "new.py").write_text("x = 1\n", encoding="utf-8")
+    (stage.root / "README.md").unlink()
+    stage.publish()
+    assert (source / "pkg" / "sub" / "new.py").read_text(encoding="utf-8") == "x = 1\n"
+    assert not (source / "README.md").exists()

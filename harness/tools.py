@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,9 +13,10 @@ from harness.authority import (
     allow_tool,
     resolve_in_root,
 )
-from harness.isolation import Stage
+from harness.isolation import Stage, command_env
 
-SKIP_DIRS = {".git", ".harness", "__pycache__", ".pytest_cache", "node_modules"}
+SKIP_DIRS = {".git", ".harness", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules"}
+SHELL_TIMEOUT = 60
 
 
 class ToolError(Exception):
@@ -31,6 +31,7 @@ def execute(
     role: str,
     helper: Callable[[str], str] | None = None,
     stopped: bool = False,
+    timeout: int = SHELL_TIMEOUT,
 ) -> str:
     allow_tool(role, name)
     if stopped and name in MUTATING_TOOLS:
@@ -48,7 +49,7 @@ def execute(
     if name == "edit_file":
         return _edit_file(stage.root, args)
     if name == "run_shell":
-        return _run_shell(stage.root, str(args.get("command") or ""))
+        return _run_shell(stage, str(args.get("command") or ""), timeout)
     if name == "git_status":
         return _git(["status", "--short"], stage.root)
     if name == "git_diff":
@@ -187,7 +188,7 @@ def _edit_file(root: Path, args: dict) -> str:
     return f"updated {path.relative_to(root)}"
 
 
-def _run_shell(root: Path, command: str) -> str:
+def _run_shell(stage: Stage, command: str, timeout: int) -> str:
     if not command.strip():
         raise ToolError("command is required")
     try:
@@ -196,29 +197,24 @@ def _run_shell(root: Path, command: str) -> str:
         raise ToolError(str(exc)) from exc
     if not parts:
         raise ToolError("command is required")
+    python = stage.python()
     if parts[0] in {"python", "python3"}:
-        parts[0] = sys.executable
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "HOME": str(root / ".home"),
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    (root / ".home").mkdir(exist_ok=True)
+        parts[0] = python
+    env = command_env(stage.home(), python)
     try:
         proc = subprocess.run(
             parts,
-            cwd=root,
+            cwd=stage.root,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=timeout,
             env=env,
             check=False,
         )
     except FileNotFoundError as exc:
         raise ToolError(str(exc)) from exc
     except subprocess.TimeoutExpired as exc:
-        raise ToolError("command timed out") from exc
+        raise ToolError(f"command timed out after {timeout}s") from exc
     output = ((proc.stdout or "") + (proc.stderr or "")).strip()
     return f"exit {proc.returncode}\n{output}"
 
