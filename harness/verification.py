@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-import os
+import shlex
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from harness.isolation import command_env, stage_home
+
+DEFAULT_TIMEOUT = 300
+DEFAULT_COMMAND = "python -m pytest -q"
 
 
 @dataclass
@@ -18,24 +23,58 @@ class Verification:
         return asdict(self)
 
 
-def run_checks(stage_root: Path) -> Verification:
-    command = "python -m pytest -q"
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "HOME": str(stage_root / ".home"),
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    (stage_root / ".home").mkdir(exist_ok=True)
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q"],
-        cwd=stage_root,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        env=env,
-        check=False,
-    )
+def run_checks(
+    stage_root: Path,
+    *,
+    python: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    command: str = "",
+) -> Verification:
+    """Run the project's checks in the stage. The exit code is the only verdict.
+
+    ``command`` is the operator's ``workspace.check_command`` or, by default,
+    pytest. It is split with ``shlex`` and never handed to a shell. ``python``
+    is the repository's own interpreter when it has one; otherwise the harness
+    interpreter, and ``python``/``python3`` in the command resolve to it. A
+    timeout is a failed verification, never an exception, so a slow or hung
+    suite cannot leave a run stuck in ``running``.
+    """
+    interpreter = python or sys.executable
+    command = command.strip() or DEFAULT_COMMAND
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        return Verification(passed=False, command=command, exit_code=-1, output=f"bad check command: {exc}")
+    if not argv:
+        return Verification(passed=False, command=command, exit_code=-1, output="empty check command")
+    if argv[0] in {"python", "python3"}:
+        argv[0] = interpreter
+    env = command_env(stage_home(stage_root), interpreter)
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=stage_root,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        partial = _text(exc.stdout) + _text(exc.stderr)
+        return Verification(
+            passed=False,
+            command=command,
+            exit_code=-1,
+            output=(f"checks timed out after {timeout}s\n" + partial.strip())[-8000:],
+        )
+    except OSError as exc:
+        return Verification(
+            passed=False,
+            command=command,
+            exit_code=-1,
+            output=f"checks could not start: {exc}",
+        )
     output = ((proc.stdout or "") + (proc.stderr or "")).strip()
     return Verification(
         passed=proc.returncode == 0,
@@ -43,3 +82,11 @@ def run_checks(stage_root: Path) -> Verification:
         exit_code=proc.returncode,
         output=output[-8000:],
     )
+
+
+def _text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value

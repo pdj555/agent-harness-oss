@@ -6,9 +6,9 @@ from harness.authority import PathDenied, PermissionDenied
 from harness.config import Config
 from harness.isolation import IsolationError, create_stage
 from harness.leverage import scan as leverage_scan
-from harness.provider import Completion, Provider
+from harness.provider import SECRET_ENV, Completion, Provider
 from harness.review import run_review
-from harness.store import Store
+from harness.store import TERMINAL_STATUSES, Store
 from harness.tools import ToolError, execute, software_helper, tool_specs
 from harness.verification import run_checks
 
@@ -68,6 +68,28 @@ def configuration_answer(objective: str, provider: Provider) -> str | None:
 
 
 def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider) -> None:
+    """Drive one run to a terminal status.
+
+    Every exit path lands in ``completed``, ``failed``, or ``stopped``. An
+    unexpected exception is recorded as a failed run instead of dying inside the
+    background thread and leaving the row in ``running`` forever.
+    """
+    try:
+        _execute_run(run_id, store=store, config=config, provider=provider)
+    except Exception as exc:
+        current = store.get_run(run_id)
+        if current is None or current.status in TERMINAL_STATUSES:
+            raise
+        store.update_run(
+            run_id,
+            status="failed",
+            result=f"Harness error: {type(exc).__name__}: {exc}",
+            blockers=["internal error"],
+            active_work="",
+        )
+
+
+def _execute_run(run_id: str, *, store: Store, config: Config, provider: Provider) -> None:
     run = store.get_run(run_id)
     if run is None:
         return
@@ -150,6 +172,8 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         if current.stop_requested:
             store.update_run(run_id, status="stopped", result="Stopped by the user.")
             return
+        if not _require_safe_stage(store, run_id, stage, "continuing the run"):
+            return
 
         try:
             completion = provider.complete(messages, tools)
@@ -181,6 +205,7 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                         role="principal",
                         helper=helper,
                         stopped=bool(current and current.stop_requested),
+                        timeout=config.check_timeout,
                     )
                     store.add_event(
                         run_id, "action", _human_action(call.name, call.arguments)
@@ -214,10 +239,19 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
                             "content": detail,
                         }
                     )
+                    if not _require_safe_stage(store, run_id, stage, "continuing after a tool call"):
+                        return
             continue
 
+        if not _require_safe_stage(store, run_id, stage, "verification"):
+            return
         store.update_run(run_id, active_work="Running verification.")
-        evidence = run_checks(stage.root)
+        evidence = run_checks(
+            stage.root,
+            python=stage.python(),
+            timeout=config.check_timeout,
+            command=config.check_command,
+        )
         files = stage.changed_files()
         diff = stage.diff()
         store.update_run(
@@ -232,13 +266,22 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
             "evidence",
             f"verification passed={evidence.passed} exit={evidence.exit_code}",
         )
+        if not _require_safe_stage(store, run_id, stage, "independent review"):
+            return
         review = run_review(stage, evidence, provider)
         store.update_run(run_id, review=review)
         store.add_event(run_id, "decision", review["summary"])
 
         if evidence.passed and review.get("passed"):
             if config.auto_publish:
-                stage.publish()
+                if not _require_safe_stage(store, run_id, stage, "publish"):
+                    return
+                try:
+                    stage.publish()
+                except IsolationError as exc:
+                    _fail_unsafe_stage(store, run_id, "publish", exc)
+                    return
+                store.mark_published(run_id)
                 store.add_event(run_id, "result", "Published verified files into the selected repository.")
             result_text = (
                 completion.text.strip()
@@ -280,6 +323,32 @@ def execute_run(run_id: str, *, store: Store, config: Config, provider: Provider
         status="failed",
         result="Reached the step limit without verification evidence.",
         blockers=["step limit"],
+    )
+
+
+def _require_safe_stage(store: Store, run_id: str, stage, phase: str) -> bool:
+    try:
+        stage.assert_safe()
+    except IsolationError as exc:
+        _fail_unsafe_stage(store, run_id, phase, exc)
+        return False
+    return True
+
+
+def _fail_unsafe_stage(store: Store, run_id: str, phase: str, exc: IsolationError) -> None:
+    store.add_event(run_id, "decision", f"Stage safety check failed before {phase}: {exc}")
+    current = store.get_run(run_id)
+    blockers = list(current.blockers) if current else []
+    if "unsafe stage" not in blockers:
+        blockers.append("unsafe stage")
+    store.update_run(
+        run_id,
+        status="failed",
+        result="Run stopped because the isolated stage failed safety checks.",
+        blockers=blockers,
+        active_work="",
+        investigating="",
+        stage_path=None,
     )
 
 
@@ -331,15 +400,8 @@ def _human_action(name: str, arguments: dict | None) -> str:
     return name
 
 
-def _brief(arguments: dict | None) -> str:
-    if not arguments:
-        return ""
-    path = arguments.get("path") or arguments.get("command") or arguments.get("query") or ""
-    return str(path)[:120]
-
-
 def _redact(text: str) -> str:
-    for name in ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "OLLAMA_API_KEY"):
+    for name in SECRET_ENV:
         key = os.environ.get(name)
         if key:
             text = text.replace(key, "[redacted]")

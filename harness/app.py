@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from harness.auth import new_session_token, verify_password
 from harness.config import Config, load_config
-from harness.isolation import Stage
+from harness.isolation import IsolationError, Stage
 from harness.provider import get_provider
 from harness.runtime import NEXT_DOLLAR, execute_run
 from harness.store import Store, User
@@ -145,7 +145,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.get("/api/runs")
     def runs(request: Request) -> dict:
         user = current_user(request)
-        return {"runs": [run.public_dict() for run in store.list_runs(user.id)]}
+        return {"runs": [run.summary_dict() for run in store.list_runs(user.id)]}
 
     @app.post("/api/runs", status_code=201)
     def create_run(body: RunRequest, request: Request) -> dict:
@@ -194,16 +194,19 @@ def create_app(config: Config | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=400, detail={"error": "only a verified completed run can be published"}
             )
-        if not run.stage_path:
-            raise HTTPException(status_code=400, detail={"error": "run has no isolated stage"})
+        if not run.stage_path or not Path(run.stage_path).is_dir():
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "the isolated stage for this run no longer exists; run it again"},
+            )
         repo = store.repo_by_id(run.repo_id, config.workspace_roots)
         if repo is None:
             raise HTTPException(status_code=404, detail={"error": "repository not found"})
-        Stage(id=run.id, source=repo.path, root=Path(run.stage_path)).publish()
+        try:
+            Stage(id=run.id, source=repo.path, root=Path(run.stage_path)).publish()
+        except IsolationError as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
         store.add_event(run_id, "result", "Published verified files into the selected repository.")
-        published = store.get_run(run_id)
-        if published is None:
-            raise HTTPException(status_code=404, detail={"error": "run not found"})
-        return published.public_dict()
+        return store.mark_published(run_id).public_dict()
 
     return app

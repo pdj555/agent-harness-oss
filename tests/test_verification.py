@@ -60,3 +60,68 @@ def test_real_fix_makes_verification_pass(tmp_path: Path):
     result = run_checks(stage.root)
     assert result.passed is True
     assert result.exit_code == 0
+
+
+def test_timeout_is_a_failed_verification_not_a_crash(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-timeout")
+
+    def hang(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"], output="1 test collected")
+
+    monkeypatch.setattr("harness.verification.subprocess.run", hang)
+    result = run_checks(stage.root, timeout=7)
+    assert result.passed is False
+    assert result.exit_code != 0
+    assert "timed out after 7s" in result.output
+    assert "1 test collected" in result.output
+
+
+def test_repository_interpreter_runs_the_checks_when_present(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    (source / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+    git_init(source)
+    fake = source / ".venv" / "bin" / "python"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("#!/bin/sh\necho \"project-venv $*\"\necho \"home=$HOME\"\nexit 0\n", encoding="utf-8")
+    fake.chmod(0o755)
+    stage = create_stage(source, tmp_path / "stages", "run-venv")
+    assert stage.python() == str(fake)
+    result = run_checks(stage.root, python=stage.python())
+    assert result.passed is True
+    assert "project-venv -m pytest -q" in result.output
+    assert f"home={stage.home()}" in result.output
+
+
+def test_harness_interpreter_is_the_fallback(tmp_path: Path):
+    import sys
+
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-no-venv")
+    assert stage.python() == sys.executable
+
+
+def test_operator_check_command_decides_the_verdict(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-command")
+    failing = run_checks(stage.root, command="sh -c 'echo custom-check; exit 3'")
+    assert failing.passed is False
+    assert failing.exit_code == 3
+    assert "custom-check" in failing.output
+    assert failing.command == "sh -c 'echo custom-check; exit 3'"
+    passing = run_checks(stage.root, command="sh -c 'exit 0'")
+    assert passing.passed is True
+
+
+def test_malformed_check_command_fails_closed(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-bad-command")
+    result = run_checks(stage.root, command="sh -c 'unterminated")
+    assert result.passed is False
+    assert "bad check command" in result.output

@@ -7,6 +7,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Protocol
 
+SECRET_ENV = ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "OLLAMA_API_KEY")
+
 
 @dataclass
 class ToolCall:
@@ -461,7 +463,7 @@ def _shell_passed(content: str) -> bool:
 
 def _openai_messages(messages: list[dict]) -> list[dict]:
     secrets = []
-    for name in ("HARNESS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "OLLAMA_API_KEY"):
+    for name in SECRET_ENV:
         value = os.environ.get(name)
         if value:
             secrets.append(value)

@@ -11,6 +11,8 @@ from uuid import uuid4
 
 from harness.auth import hash_session
 
+TERMINAL_STATUSES = frozenset({"completed", "failed", "stopped"})
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -51,6 +53,7 @@ class Run:
     diff: str = ""
     stage_path: str | None = None
     stop_requested: bool = False
+    published_at: str | None = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -59,6 +62,19 @@ class Run:
         data.pop("user_id", None)
         data.pop("stage_path", None)
         return data
+
+    def summary_dict(self) -> dict:
+        """History row: enough to list and select a run, without the diff and events."""
+        return {
+            "id": self.id,
+            "repo_id": self.repo_id,
+            "objective": self.objective,
+            "status": self.status,
+            "files_changed": list(self.files_changed),
+            "published_at": self.published_at,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
 
 class Store:
@@ -204,33 +220,42 @@ class Store:
             ).fetchall()
         return [_run_from_row(row) for row in rows]
 
+    def mark_published(self, run_id: str) -> Run:
+        return self.update_run(run_id, published_at=_now())
+
     def request_stop(self, run_id: str) -> Run | None:
-        run = self.get_run(run_id)
-        if run is None:
-            return None
-        if run.status in {"completed", "failed", "stopped"}:
-            return run
-        return self.update_run(run_id, stop_requested=True, status="stopping")
+        with self._lock:
+            run = self.get_run(run_id)
+            if run is None:
+                return None
+            if run.status in TERMINAL_STATUSES:
+                return run
+            return self.update_run(run_id, stop_requested=True, status="stopping")
 
     def add_event(self, run_id: str, kind: str, detail: str) -> Run:
-        run = self.get_run(run_id)
-        if run is None:
-            raise KeyError(run_id)
-        events = list(run.events)
-        events.append({"kind": kind, "detail": detail, "at": _now()})
-        return self.update_run(run_id, events=events)
+        with self._lock:
+            run = self.get_run(run_id)
+            if run is None:
+                raise KeyError(run_id)
+            events = list(run.events)
+            events.append({"kind": kind, "detail": detail, "at": _now()})
+            return self.update_run(run_id, events=events)
 
     def update_run(self, run_id: str, **fields) -> Run:
-        run = self.get_run(run_id)
-        if run is None:
-            raise KeyError(run_id)
-        for key, value in fields.items():
-            if not hasattr(run, key):
-                raise AttributeError(key)
-            setattr(run, key, value)
-        run.updated_at = _now()
-        self._write_run(run, insert=False)
-        return run
+        # Read, modify, and write under one lock. The runtime thread and the HTTP
+        # thread both update the same row; an unlocked read-modify-write let a
+        # runtime write clobber a concurrent stop request.
+        with self._lock:
+            run = self.get_run(run_id)
+            if run is None:
+                raise KeyError(run_id)
+            for key, value in fields.items():
+                if not hasattr(run, key):
+                    raise AttributeError(key)
+                setattr(run, key, value)
+            run.updated_at = _now()
+            self._write_run(run, insert=False)
+            return run
 
     def _write_run(self, run: Run, insert: bool = True) -> None:
         payload = {
@@ -247,6 +272,7 @@ class Store:
             "diff": run.diff,
             "stage_path": run.stage_path,
             "stop_requested": run.stop_requested,
+            "published_at": run.published_at,
         }
         with self._lock:
             if insert:
@@ -309,6 +335,7 @@ def _run_from_row(row: sqlite3.Row) -> Run:
         diff=payload.get("diff") or "",
         stage_path=payload.get("stage_path"),
         stop_requested=bool(payload.get("stop_requested")),
+        published_at=payload.get("published_at"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

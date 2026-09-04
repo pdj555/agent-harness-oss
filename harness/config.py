@@ -41,6 +41,8 @@ class Config:
     auto_publish: bool = False
     max_steps: int = 24
     max_repairs: int = 2
+    check_timeout: int = 300
+    check_command: str = ""
     provider_instance: Any = None
 
 
@@ -109,6 +111,8 @@ def load_config(path: Path | None = None, *, prefer_live: bool = True) -> Config
         config.provider_name = str(provider.get("name", config.provider_name))
         config.data_dir = _resolve_root(data.get("dir", config.data_dir), candidate.parent)
         config.auto_publish = bool(workspace.get("auto_publish", config.auto_publish))
+        config.check_timeout = max(1, int(workspace.get("check_timeout", config.check_timeout)))
+        config.check_command = str(workspace.get("check_command", config.check_command)).strip()
     if not config.workspace_roots and DEFAULT_SAMPLE.is_dir():
         config.workspace_roots = [DEFAULT_SAMPLE]
     env_provider = os.environ.get("HARNESS_PROVIDER")

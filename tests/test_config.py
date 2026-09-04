@@ -77,3 +77,15 @@ def test_toml_provider_name_pins_xai_with_competing_keys(tmp_path: Path, monkeyp
     assert "api.x.ai/v1" in url
     assert api_key == "xai-test-key"
     assert payload["model"] == "grok-4.6"
+
+
+def test_check_command_and_timeout_come_from_workspace_config(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "harness.toml").write_text(
+        '[workspace]\nroots = ["."]\ncheck_command = "npm test"\ncheck_timeout = 45\n',
+        encoding="utf-8",
+    )
+    config = load_config(prefer_live=False)
+    assert config.check_command == "npm test"
+    assert config.check_timeout == 45
+    assert load_config(prefer_live=False, path=None).check_command == "npm test"
