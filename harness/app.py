@@ -118,7 +118,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         reasoning = None
         if name != "deterministic":
             try:
-                model = live_endpoint()[2]
+                model = live_endpoint(getattr(provider, "selection", None))[2]
             except RuntimeError:
                 model = os.environ.get("HARNESS_MODEL")
             if model:

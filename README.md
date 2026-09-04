@@ -38,6 +38,9 @@ Paid OpenAI daily driver is **GPT-5.6 Luna** at `reasoning_effort=xhigh`
 ($0.20 / $1.20 per 1M). Pin it with `OPENAI_API_KEY` and
 `HARNESS_PROVIDER=openai`. `HARNESS_MODEL=gpt-5.6-sol` for the close.
 
+xAI uses `grok-4.6` by default. Pin it with `XAI_API_KEY` and
+`HARNESS_PROVIDER=xai`, or override it with `HARNESS_MODEL`.
+
 `harness demo` stays on the scripted sample agent so CI does not need a vendor.
 
 ## Why this is not a chat demo
@@ -72,10 +75,12 @@ uv run harness repo add ~/code/your-repo
 
 ```bash
 uv run pytest
-uv run ruff check harness tests
+uv run ruff check harness tests scripts
 uv run python scripts/scan_secrets.py
 uvx pip-audit
 uv build
+uv run python scripts/scan_secrets.py dist/*.whl
+uv run python scripts/smoke_wheel.py dist/*.whl
 ```
 
 ## License

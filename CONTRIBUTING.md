@@ -34,7 +34,7 @@ property, leave it out and write a simpler public equivalent.
 ```bash
 uv sync --extra dev
 uv run pytest
-uv run ruff check harness tests
+uv run ruff check harness tests scripts
 uv run python scripts/scan_secrets.py
 ```
 

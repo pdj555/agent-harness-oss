@@ -53,7 +53,7 @@ def configuration_answer(objective: str, provider: Provider) -> str | None:
     from harness.provider import live_endpoint, reasoning_effort_for
 
     try:
-        _key, _base, model = live_endpoint()
+        _key, _base, model = live_endpoint(getattr(provider, "selection", None))
     except RuntimeError:
         model = os.environ.get("HARNESS_MODEL")
     if model:

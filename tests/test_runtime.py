@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from harness.config import Config
 from harness.provider import Completion, DeterministicProvider, ScriptedProvider, ToolCall
-from harness.runtime import execute_run
+from harness.runtime import _redact, execute_run
 from harness.store import Store
 from tests.helpers import copy_sample, git_init
 
@@ -27,6 +27,16 @@ def _setup(tmp_path: Path) -> tuple[Store, Config, str]:
     repo = store.list_repos(config.workspace_roots)[0]
     run = store.create_run(user.id, repo.id, "Find the reliability bug, fix it, and prove it.")
     return store, config, run.id
+
+
+def test_runtime_redacts_ollama_cloud_key(monkeypatch):
+    secret = "ollama-cloud-secret-value"
+    monkeypatch.setenv("OLLAMA_API_KEY", secret)
+
+    redacted = _redact(f"tool output contained {secret}")
+
+    assert secret not in redacted
+    assert "[redacted]" in redacted
 
 
 def _symlink_or_skip(link: Path, target: Path | str) -> None:

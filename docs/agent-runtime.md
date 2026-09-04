@@ -66,7 +66,9 @@ stop that arrived from the HTTP thread.
 - `scripted` — test double with a programmed list of completions.
 - `openai_compat` — HTTP `chat/completions` with tool calls. `OLLAMA_API_KEY`
   routes to Ollama Cloud. Else local Ollama if it is running, else
-  `OPENAI_API_KEY` (default `gpt-5.6-luna`, `xhigh`) or `XAI_API_KEY`.
-  `HARNESS_PROVIDER=ollama` keeps the local `$0` path.
+  `XAI_API_KEY` (default `grok-4.6`) or `OPENAI_API_KEY` (default
+  `gpt-5.6-luna`, `xhigh`). Explicit provider selections from the environment
+  or `harness.toml` are pinned and fail closed. `HARNESS_PROVIDER=ollama`
+  keeps the local `$0` path.
 
 Swap providers without changing the runtime.

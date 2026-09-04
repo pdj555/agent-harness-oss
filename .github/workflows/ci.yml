@@ -14,7 +14,7 @@ jobs:
       - name: Sync
         run: uv sync --extra dev
       - name: Lint
-        run: uv run ruff check harness tests
+        run: uv run ruff check harness tests scripts
       - name: Tests
         run: uv run pytest
       - name: Secret scan
@@ -23,3 +23,7 @@ jobs:
         run: uvx pip-audit
       - name: Build
         run: uv build
+      - name: Built wheel secret scan
+        run: uv run python scripts/scan_secrets.py dist/*.whl
+      - name: Installed demo
+        run: uv run python scripts/smoke_wheel.py dist/*.whl
