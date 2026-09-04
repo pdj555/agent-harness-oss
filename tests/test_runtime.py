@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from harness.config import Config
 from harness.provider import Completion, DeterministicProvider, ScriptedProvider, ToolCall
 from harness.runtime import execute_run
@@ -26,6 +27,13 @@ def _setup(tmp_path: Path) -> tuple[Store, Config, str]:
     repo = store.list_repos(config.workspace_roots)[0]
     run = store.create_run(user.id, repo.id, "Find the reliability bug, fix it, and prove it.")
     return store, config, run.id
+
+
+def _symlink_or_skip(link: Path, target: Path | str) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
 
 
 def test_model_question_does_not_edit_the_repository(tmp_path: Path):
@@ -76,6 +84,45 @@ def test_model_cannot_skip_permission_checks_by_asking(tmp_path: Path):
         for event in run.events
     )
     assert denied
+
+
+def test_unsafe_stage_fails_before_verification_review_or_publish(tmp_path: Path, monkeypatch):
+    store, config, run_id = _setup(tmp_path)
+    config.auto_publish = True
+    source = config.workspace_roots[0]
+    original = (source / "tracker.py").read_text(encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside target\n", encoding="utf-8")
+    probe = tmp_path / "symlink-probe"
+    _symlink_or_skip(probe, outside)
+    probe.unlink()
+    command = (
+        "python3 -c \"from pathlib import Path; target = Path('tracker.py'); "
+        f"target.unlink(); target.symlink_to({str(outside)!r})\""
+    )
+    provider = ScriptedProvider(
+        [
+            Completion(tool_calls=[ToolCall(name="run_shell", arguments={"command": command})]),
+            Completion(text="do not verify"),
+        ]
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("unsafe stages must not enter this pipeline step")
+
+    monkeypatch.setattr("harness.runtime.run_checks", forbidden)
+    monkeypatch.setattr("harness.runtime.run_review", forbidden)
+    execute_run(run_id, store=store, config=config, provider=provider)
+
+    run = store.get_run(run_id)
+    assert run.status == "failed"
+    assert run.verification is None
+    assert run.review is None
+    assert run.stage_path is None
+    assert "unsafe stage" in run.blockers
+    assert any("Stage safety check failed" in event["detail"] for event in run.events)
+    assert (source / "tracker.py").read_text(encoding="utf-8") == original
+    assert outside.read_text(encoding="utf-8") == "outside target\n"
 
 
 def test_stop_prevents_further_mutating_work(tmp_path: Path):

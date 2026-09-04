@@ -8,6 +8,13 @@ from harness.isolation import IsolationError, create_stage
 from tests.helpers import copy_sample, git_init
 
 
+def _symlink_or_skip(link: Path, target: Path | str) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+
+
 def _stage(tmp_path: Path):
     source = copy_sample(tmp_path / "source")
     git_init(source)
@@ -44,6 +51,26 @@ def test_publish_applies_verified_delta_to_source(tmp_path: Path):
     assert (source / "tracker.py").read_text(encoding="utf-8") == updated
 
 
+@pytest.mark.parametrize("git_stage", [False, True])
+def test_publish_rejects_escaping_symlink_created_after_stage(tmp_path: Path, git_stage: bool):
+    source = copy_sample(tmp_path / "source")
+    if git_stage:
+        git_init(source)
+    original = (source / "tracker.py").read_text(encoding="utf-8")
+    stage = create_stage(source, tmp_path / "stages", "run-publish-symlink")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("must not be published\n", encoding="utf-8")
+    target = stage.root / "tracker.py"
+    target.unlink()
+    _symlink_or_skip(target, outside)
+
+    with pytest.raises(IsolationError, match="symlink escapes"):
+        stage.publish()
+
+    assert (source / "tracker.py").read_text(encoding="utf-8") == original
+    assert outside.read_text(encoding="utf-8") == "must not be published\n"
+
+
 def test_git_stage_overlays_working_files_without_copying_ignored_data(tmp_path: Path):
     source = copy_sample(tmp_path / "source")
     (source / ".gitignore").write_text(".env\nnode_modules/\n", encoding="utf-8")
@@ -72,6 +99,94 @@ def test_git_stage_preserves_a_working_tree_deletion(tmp_path: Path):
 
     assert not (stage.root / "README.md").exists()
     assert "README.md" in stage.changed_files()
+
+
+def test_git_stage_replaces_tracked_directory_with_dirty_file(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    swap = source / "swap"
+    swap.mkdir()
+    (swap / "old.txt").write_text("old data\n", encoding="utf-8")
+    git_init(source)
+    shutil.rmtree(swap)
+    swap.write_text("replacement data\n", encoding="utf-8")
+
+    stage = create_stage(source, tmp_path / "stages", "run-file-replacement")
+
+    assert (stage.root / "swap").is_file()
+    assert (stage.root / "swap").read_text(encoding="utf-8") == "replacement data\n"
+
+
+def test_git_stage_removes_fully_deleted_tracked_directory(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    removed = source / "removed"
+    (removed / "nested").mkdir(parents=True)
+    (removed / "old.txt").write_text("old data\n", encoding="utf-8")
+    (removed / "nested" / "old.txt").write_text("nested old data\n", encoding="utf-8")
+    git_init(source)
+    shutil.rmtree(removed)
+
+    stage = create_stage(source, tmp_path / "stages", "run-directory-deletion")
+
+    assert not (stage.root / "removed").exists()
+
+
+def test_git_stage_rejects_dirty_directory_replacing_tracked_escaping_symlink(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel.txt"
+    sentinel.write_text("must not change\n", encoding="utf-8")
+    _symlink_or_skip(source / "swap", outside)
+    git_init(source)
+    (source / "swap").unlink()
+    (source / "swap").mkdir()
+    (source / "swap" / "untracked.txt").write_text("stage data\n", encoding="utf-8")
+
+    with pytest.raises(IsolationError, match="symlink escapes"):
+        create_stage(source, tmp_path / "stages", "run-swap")
+
+    assert sentinel.read_text(encoding="utf-8") == "must not change\n"
+    assert not (outside / "untracked.txt").exists()
+    assert not (tmp_path / "stages" / "run-swap").exists()
+
+
+def test_git_stage_replaces_tracked_safe_symlink_with_dirty_directory(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    target = source / "target"
+    target.mkdir()
+    (target / "keep.txt").write_text("target data\n", encoding="utf-8")
+    _symlink_or_skip(source / "swap", "target")
+    git_init(source)
+    (source / "swap").unlink()
+    (source / "swap").mkdir()
+    (source / "swap" / "untracked.txt").write_text("stage data\n", encoding="utf-8")
+
+    stage = create_stage(source, tmp_path / "stages", "run-safe-directory")
+
+    assert (stage.root / "swap").is_dir()
+    assert not (stage.root / "swap").is_symlink()
+    assert (stage.root / "swap" / "untracked.txt").read_text(encoding="utf-8") == "stage data\n"
+    assert (stage.root / "target" / "keep.txt").read_text(encoding="utf-8") == "target data\n"
+
+
+def test_git_stage_replaces_tracked_directory_with_dirty_safe_symlink(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    swap = source / "swap"
+    swap.mkdir()
+    (swap / "old.txt").write_text("old data\n", encoding="utf-8")
+    target = source / "target"
+    target.mkdir()
+    (target / "keep.txt").write_text("target data\n", encoding="utf-8")
+    git_init(source)
+    shutil.rmtree(swap)
+    _symlink_or_skip(swap, "target")
+
+    stage = create_stage(source, tmp_path / "stages", "run-safe-symlink")
+
+    assert (stage.root / "swap").is_symlink()
+    assert (stage.root / "swap").readlink() == Path("target")
+    assert (stage.root / "swap" / "keep.txt").read_text(encoding="utf-8") == "target data\n"
+    assert not (stage.root / "swap" / "old.txt").exists()
 
 
 def test_non_git_stage_excludes_credentials_and_dependency_trees(tmp_path: Path):
@@ -132,7 +247,7 @@ def test_stage_rejects_symlinks_that_escape_the_worktree(tmp_path: Path, git_sta
         git_init(source)
     outside = tmp_path / "outside.txt"
     outside.write_text("must stay outside the stage\n", encoding="utf-8")
-    (source / "escape").symlink_to(outside)
+    _symlink_or_skip(source / "escape", outside)
 
     with pytest.raises(IsolationError, match="symlink escapes"):
         create_stage(source, tmp_path / "stages", "run-symlink")

@@ -87,6 +87,10 @@ Repositories that are not pytest projects set `workspace.check_command`
 `shlex`, never handed to a shell, and runs with the same filtered environment.
 Its exit code is the verdict. The model cannot see or change this setting.
 
+The runtime validates stage safety before verification, independent review,
+and publishing. If an escaping symlink is detected, it records a failed run
+and disables the stored stage reference instead of continuing the pipeline.
+
 Completion also requires an independent review record (`role: reviewer`) whose
 summary is not the principal's final text. Review recognises test files in the
 common Python, JavaScript, Go, and Ruby layouts: `test_*`, `*_test.*`,

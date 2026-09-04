@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from harness.authority import PathDenied, PermissionDenied
 from harness.isolation import create_stage
 from harness.tools import ToolError, execute, software_helper
@@ -13,6 +14,13 @@ def _ctx(tmp_path: Path):
     git_init(source)
     stage = create_stage(source, tmp_path / "stages", "run-tools")
     return stage
+
+
+def _symlink_or_skip(link: Path, target: Path | str) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
 
 
 def test_list_search_read_edit_and_shell_under_authority(tmp_path: Path):
@@ -46,6 +54,24 @@ def test_tools_reject_path_outside_stage(tmp_path: Path):
         assert "deny" in str(exc).lower() or "path" in str(exc).lower() or "outside" in str(exc).lower()
     else:
         raise AssertionError("read of /etc/passwd must be denied")
+
+
+def test_tools_fail_closed_after_shell_creates_escaping_symlink(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside target\n", encoding="utf-8")
+    probe = tmp_path / "symlink-probe"
+    _symlink_or_skip(probe, outside)
+    probe.unlink()
+    command = (
+        "python3 -c \"from pathlib import Path; target = Path('tracker.py'); "
+        f"target.unlink(); target.symlink_to({str(outside)!r})\""
+    )
+
+    with pytest.raises(ToolError, match="symlink escapes"):
+        execute("run_shell", {"command": command}, stage=stage, role="principal")
+    with pytest.raises(ToolError, match="symlink escapes"):
+        execute("read_file", {"path": "tracker.py"}, stage=stage, role="principal")
 
 
 def test_delegate_inspects_without_user_management(tmp_path: Path):

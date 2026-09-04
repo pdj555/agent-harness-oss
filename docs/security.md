@@ -55,6 +55,11 @@ This is not an OS sandbox. A live model that can run Python can still touch
 the host as the same user. Treat live vendors as code execution. Bind to
 loopback. Keep `workspace.roots` small.
 
+Escaping symlinks are rejected when a stage is created and before tools,
+verification, review, and publishing use the stage. If a shell command leaves
+one behind, the run fails before those pipeline steps and the stored stage
+reference is disabled.
+
 ## Verification is not a tool the model owns
 
 The model may run tests via `run_shell`. That output is evidence in the
