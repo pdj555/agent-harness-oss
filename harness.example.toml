@@ -10,6 +10,9 @@ roots = ["examples/sample-repo"]
 # Seconds allowed for the project's tests, both for verification and for a
 # shell command the agent runs. A timeout is a failed check, not a hung run.
 # check_timeout = 300
+# Verdict command for repositories that are not pytest projects. Split with
+# shlex, no shell. Defaults to "python -m pytest -q".
+# check_command = "npm test"
 
 [provider]
 # Serve uses a live model when Ollama is running or OPENAI_API_KEY / XAI_API_KEY

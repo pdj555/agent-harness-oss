@@ -17,6 +17,7 @@ from harness.isolation import Stage, command_env
 
 SKIP_DIRS = {".git", ".harness", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules"}
 SHELL_TIMEOUT = 60
+MAX_SEARCH_BYTES = 1_000_000
 
 
 class ToolError(Exception):
@@ -159,11 +160,8 @@ def _search(root: Path, query: str) -> str:
         rel_parts = path.relative_to(root).parts
         if any(part in SKIP_DIRS for part in rel_parts):
             continue
-        if not path.is_file():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
+        text = read_text_file(path, MAX_SEARCH_BYTES)
+        if text is None:
             continue
         for number, line in enumerate(text.splitlines(), start=1):
             if needle in line.lower():
@@ -171,6 +169,22 @@ def _search(root: Path, query: str) -> str:
                 if len(hits) >= 50:
                     return "\n".join(hits)
     return "\n".join(hits) if hits else "(no matches)"
+
+
+def read_text_file(path: Path, max_bytes: int) -> str | None:
+    """UTF-8 text of a regular file, or None for directories, binaries, and large files."""
+    try:
+        if not path.is_file() or path.stat().st_size > max_bytes:
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if b"\0" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def _edit_file(root: Path, args: dict) -> str:

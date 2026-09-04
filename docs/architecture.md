@@ -82,8 +82,16 @@ the harness interpreter. The same choice applies when the agent runs `python`
 through `run_shell`. A suite that exceeds `workspace.check_timeout` (default
 300 seconds) is a failed verification with the partial output, not an exception.
 
+Repositories that are not pytest projects set `workspace.check_command`
+(for example `npm test` or `go test ./...`). The command is split with
+`shlex`, never handed to a shell, and runs with the same filtered environment.
+Its exit code is the verdict. The model cannot see or change this setting.
+
 Completion also requires an independent review record (`role: reviewer`) whose
-summary is not the principal's final text.
+summary is not the principal's final text. Review recognises test files in the
+common Python, JavaScript, Go, and Ruby layouts: `test_*`, `*_test.*`,
+`*.test.*`, `*.spec.*`, and anything under `tests/`, `test/`, `__tests__/`, or
+`spec/`.
 
 ## Provider boundary
 

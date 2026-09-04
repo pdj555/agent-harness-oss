@@ -307,7 +307,10 @@
     });
     document.getElementById("proof-empty").hidden = !!(verification.output || (run.review && run.review.summary));
     var publishButton = document.getElementById("publish-button");
-    publishButton.hidden = !(run.status === "completed" && verification.passed);
+    var applied = !!run.published_at;
+    publishButton.hidden = applied || !(run.status === "completed" && verification.passed);
+    var appliedNote = document.getElementById("applied-note");
+    if (appliedNote) appliedNote.hidden = !applied;
   }
 
   boot();

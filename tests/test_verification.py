@@ -103,3 +103,25 @@ def test_harness_interpreter_is_the_fallback(tmp_path: Path):
     git_init(source)
     stage = create_stage(source, tmp_path / "stages", "run-no-venv")
     assert stage.python() == sys.executable
+
+
+def test_operator_check_command_decides_the_verdict(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-command")
+    failing = run_checks(stage.root, command="sh -c 'echo custom-check; exit 3'")
+    assert failing.passed is False
+    assert failing.exit_code == 3
+    assert "custom-check" in failing.output
+    assert failing.command == "sh -c 'echo custom-check; exit 3'"
+    passing = run_checks(stage.root, command="sh -c 'exit 0'")
+    assert passing.passed is True
+
+
+def test_malformed_check_command_fails_closed(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "run-bad-command")
+    result = run_checks(stage.root, command="sh -c 'unterminated")
+    assert result.passed is False
+    assert "bad check command" in result.output

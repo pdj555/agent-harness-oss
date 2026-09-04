@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
@@ -8,6 +9,7 @@ from pathlib import Path
 from harness.isolation import command_env, stage_home
 
 DEFAULT_TIMEOUT = 300
+DEFAULT_COMMAND = "python -m pytest -q"
 
 
 @dataclass
@@ -26,19 +28,31 @@ def run_checks(
     *,
     python: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
+    command: str = "",
 ) -> Verification:
-    """Run the project's tests in the stage. The exit code is the only verdict.
+    """Run the project's checks in the stage. The exit code is the only verdict.
 
-    ``python`` is the repository's own interpreter when it has one; otherwise the
-    harness interpreter. A timeout is a failed verification, never an exception,
-    so a slow or hung suite cannot leave a run stuck in ``running``.
+    ``command`` is the operator's ``workspace.check_command`` or, by default,
+    pytest. It is split with ``shlex`` and never handed to a shell. ``python``
+    is the repository's own interpreter when it has one; otherwise the harness
+    interpreter, and ``python``/``python3`` in the command resolve to it. A
+    timeout is a failed verification, never an exception, so a slow or hung
+    suite cannot leave a run stuck in ``running``.
     """
     interpreter = python or sys.executable
-    command = "python -m pytest -q"
+    command = command.strip() or DEFAULT_COMMAND
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        return Verification(passed=False, command=command, exit_code=-1, output=f"bad check command: {exc}")
+    if not argv:
+        return Verification(passed=False, command=command, exit_code=-1, output="empty check command")
+    if argv[0] in {"python", "python3"}:
+        argv[0] = interpreter
     env = command_env(stage_home(stage_root), interpreter)
     try:
         proc = subprocess.run(
-            [interpreter, "-m", "pytest", "-q"],
+            argv,
             cwd=stage_root,
             capture_output=True,
             text=True,

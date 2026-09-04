@@ -68,3 +68,22 @@ def test_review_accepts_implementation_change_when_tests_remain(tmp_path: Path):
     assert review["passed"] is True
     assert review["role"] == "reviewer"
     assert "tracker.py" in review["files_reviewed"]
+
+
+def test_review_recognises_non_python_test_layouts(tmp_path: Path):
+    from harness.review import _test_files, inspect_change
+
+    source = tmp_path / "source"
+    (source / "src").mkdir(parents=True)
+    (source / "src" / "app.js").write_text("module.exports = 1;\n", encoding="utf-8")
+    (source / "src" / "app.test.js").write_text("test('x', () => {});\n", encoding="utf-8")
+    (source / "node_modules" / "dep").mkdir(parents=True)
+    (source / "node_modules" / "dep" / "index.test.js").write_text("ignored\n", encoding="utf-8")
+    git_init(source)
+    stage = create_stage(source, tmp_path / "stages", "review-js")
+    found = {str(path.relative_to(stage.root)) for path in _test_files(stage.root)}
+    assert found == {"src/app.test.js"}
+    (stage.root / "src" / "app.js").write_text("module.exports = 2;\n", encoding="utf-8")
+    assert inspect_change(stage) == []
+    (stage.root / "src" / "app.test.js").unlink()
+    assert any("no test files" in finding for finding in inspect_change(stage))

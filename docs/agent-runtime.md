@@ -43,7 +43,8 @@ The user never manages that helper.
 `harness.review.run_review` always writes `role: "reviewer"`. Its `passed`
 flag is computed from the isolated diff, not from pytest's exit code:
 
-- tests must still exist in the stage
+- tests must still exist in the stage (Python, JavaScript, Go, and Ruby
+  layouts are recognised)
 - there must be an isolated change
 - tests may not change unless an implementation file also changed
 

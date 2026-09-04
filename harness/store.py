@@ -53,6 +53,7 @@ class Run:
     diff: str = ""
     stage_path: str | None = None
     stop_requested: bool = False
+    published_at: str | None = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -61,6 +62,19 @@ class Run:
         data.pop("user_id", None)
         data.pop("stage_path", None)
         return data
+
+    def summary_dict(self) -> dict:
+        """History row: enough to list and select a run, without the diff and events."""
+        return {
+            "id": self.id,
+            "repo_id": self.repo_id,
+            "objective": self.objective,
+            "status": self.status,
+            "files_changed": list(self.files_changed),
+            "published_at": self.published_at,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
 
 class Store:
@@ -206,6 +220,9 @@ class Store:
             ).fetchall()
         return [_run_from_row(row) for row in rows]
 
+    def mark_published(self, run_id: str) -> Run:
+        return self.update_run(run_id, published_at=_now())
+
     def request_stop(self, run_id: str) -> Run | None:
         with self._lock:
             run = self.get_run(run_id)
@@ -255,6 +272,7 @@ class Store:
             "diff": run.diff,
             "stage_path": run.stage_path,
             "stop_requested": run.stop_requested,
+            "published_at": run.published_at,
         }
         with self._lock:
             if insert:
@@ -317,6 +335,7 @@ def _run_from_row(row: sqlite3.Row) -> Run:
         diff=payload.get("diff") or "",
         stage_path=payload.get("stage_path"),
         stop_requested=bool(payload.get("stop_requested")),
+        published_at=payload.get("published_at"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

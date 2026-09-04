@@ -6,24 +6,29 @@ from harness.isolation import Stage
 from harness.provider import Provider
 from harness.verification import Verification
 
-TEST_DIR_NAMES = {"tests", "test"}
+TEST_DIR_NAMES = {"tests", "test", "__tests__", "spec"}
+TEST_NAME_MARKERS = ("_test.", ".test.", ".spec.", "_spec.")
+SKIP_DIRS = {".git", ".harness", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules"}
 
 
 def _is_test_path(rel: str) -> bool:
+    """True for test files in the common Python, JavaScript, Go, and Ruby layouts."""
     path = Path(rel)
     name = path.name
-    if name.startswith("test_") or name.endswith("_test.py"):
+    if name.startswith("test_") or name.startswith("conftest."):
         return True
-    return any(part in TEST_DIR_NAMES for part in path.parts)
+    if any(marker in name for marker in TEST_NAME_MARKERS):
+        return True
+    return any(part in TEST_DIR_NAMES for part in path.parts[:-1])
 
 
 def _test_files(root: Path) -> list[Path]:
     found: list[Path] = []
-    for path in root.rglob("*.py"):
+    for path in root.rglob("*"):
         rel = path.relative_to(root)
-        if any(part in {".git", ".harness", "__pycache__"} for part in rel.parts):
+        if any(part in SKIP_DIRS for part in rel.parts):
             continue
-        if _is_test_path(str(rel)):
+        if path.is_file() and _is_test_path(str(rel)):
             found.append(path)
     return found
 

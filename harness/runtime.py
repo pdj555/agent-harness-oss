@@ -240,7 +240,12 @@ def _execute_run(run_id: str, *, store: Store, config: Config, provider: Provide
             continue
 
         store.update_run(run_id, active_work="Running verification.")
-        evidence = run_checks(stage.root, python=stage.python(), timeout=config.check_timeout)
+        evidence = run_checks(
+            stage.root,
+            python=stage.python(),
+            timeout=config.check_timeout,
+            command=config.check_command,
+        )
         files = stage.changed_files()
         diff = stage.diff()
         store.update_run(
@@ -262,6 +267,7 @@ def _execute_run(run_id: str, *, store: Store, config: Config, provider: Provide
         if evidence.passed and review.get("passed"):
             if config.auto_publish:
                 stage.publish()
+                store.mark_published(run_id)
                 store.add_event(run_id, "result", "Published verified files into the selected repository.")
             result_text = (
                 completion.text.strip()

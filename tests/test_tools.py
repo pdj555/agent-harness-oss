@@ -98,3 +98,16 @@ def test_shell_timeout_is_reported_not_raised_through(tmp_path: Path):
         assert "timed out" in str(exc)
     else:
         raise AssertionError("a hung command must surface as a tool error")
+
+
+def test_search_skips_binary_and_oversized_files(tmp_path: Path):
+    from harness.tools import MAX_SEARCH_BYTES
+
+    stage = _ctx(tmp_path)
+    (stage.root / "blob.bin").write_bytes(b"needle\0binary")
+    (stage.root / "huge.txt").write_text("needle\n" + "x" * MAX_SEARCH_BYTES, encoding="utf-8")
+    (stage.root / "small.txt").write_text("needle here\n", encoding="utf-8")
+    found = execute("search", {"query": "needle"}, stage=stage, role="principal")
+    assert "small.txt:1" in found
+    assert "blob.bin" not in found
+    assert "huge.txt" not in found

@@ -160,3 +160,54 @@ def test_browser_script_has_no_node_globals(app):
     assert "require(" not in source
     assert "module.exports" not in source
     assert "process.env" not in source
+
+
+def test_history_rows_are_light_and_publish_records_applied(client, workspace):
+    signup(client)
+    repo_id = client.get("/api/repos").json()["repos"][0]["id"]
+    created = client.post(
+        "/api/runs",
+        json={"repo_id": repo_id, "objective": "Fix the failing tests and prove it."},
+    )
+    run_id = created.json()["id"]
+    deadline = time.time() + 60
+    run = None
+    while time.time() < deadline:
+        run = client.get(f"/api/runs/{run_id}").json()
+        if run["status"] in {"completed", "failed", "stopped"}:
+            break
+        time.sleep(0.05)
+    assert run and run["status"] == "completed"
+    assert run["published_at"] is None
+    rows = client.get("/api/runs").json()["runs"]
+    row = next(item for item in rows if item["id"] == run_id)
+    assert "diff" not in row and "events" not in row
+    assert row["status"] == "completed"
+    published = client.post(f"/api/runs/{run_id}/publish").json()
+    assert published["published_at"]
+    assert any("Published" in event["detail"] for event in published["events"])
+    rows = client.get("/api/runs").json()["runs"]
+    assert next(item for item in rows if item["id"] == run_id)["published_at"]
+
+
+def test_publish_without_a_stage_is_a_clear_conflict(client, app):
+    import shutil
+
+    signup(client)
+    repo_id = client.get("/api/repos").json()["repos"][0]["id"]
+    created = client.post(
+        "/api/runs",
+        json={"repo_id": repo_id, "objective": "Fix the failing tests and prove it."},
+    )
+    run_id = created.json()["id"]
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        if client.get(f"/api/runs/{run_id}").json()["status"] in {"completed", "failed", "stopped"}:
+            break
+        time.sleep(0.05)
+    stored = app.state.store.get_run(run_id)
+    assert stored.status == "completed"
+    shutil.rmtree(stored.stage_path)
+    response = client.post(f"/api/runs/{run_id}/publish")
+    assert response.status_code == 409
+    assert "stage" in response.json()["error"].lower()
