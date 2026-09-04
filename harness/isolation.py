@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,9 +12,50 @@ class IsolationError(Exception):
     pass
 
 
-COPY_SKIP_DIRS = {".git", ".harness", ".venv", "__pycache__", ".pytest_cache", "node_modules"}
+COPY_SKIP_DIRS = {".git", ".harness", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules"}
 COPY_SKIP_FILES = {".env"}
 SAFE_ENV_SUFFIXES = {"example", "sample", "template"}
+PROJECT_PYTHONS = (Path(".venv") / "bin" / "python", Path("venv") / "bin" / "python")
+
+
+def stage_home(root: Path) -> Path:
+    """A writable HOME for stage subprocesses that lives beside, not inside, the stage.
+
+    Tools and checks used to point HOME at ``<stage>/.home``. Anything a command
+    wrote there (pip caches, git config, shell profiles) showed up as an untracked
+    change, polluted the review, and could be published. Keeping it a sibling keeps
+    the change set equal to what the agent actually edited.
+    """
+    home = root.parent / f"{root.name}.home"
+    home.mkdir(parents=True, exist_ok=True)
+    return home
+
+
+def project_python(source: Path) -> Path | None:
+    """The repository's own interpreter when it has a local virtual environment."""
+    for rel in PROJECT_PYTHONS:
+        candidate = source / rel
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def command_env(home: Path, python: str) -> dict[str, str]:
+    """Filtered environment for anything executed inside a stage.
+
+    No provider credentials, no host HOME. The interpreter's bin directory leads
+    PATH so ``pytest`` and friends resolve to the same environment as ``python``.
+    """
+    path = os.environ.get("PATH", "/usr/bin:/bin")
+    bin_dir = str(Path(python).parent)
+    if bin_dir and bin_dir not in path.split(os.pathsep):
+        path = f"{bin_dir}{os.pathsep}{path}"
+    return {
+        "PATH": path,
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "HOME": str(home),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
 
 
 def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -71,6 +113,7 @@ def create_stage(source: Path, stages_dir: Path, run_id: str) -> Stage:
         raise IsolationError("repository path does not exist")
     stages_dir.mkdir(parents=True, exist_ok=True)
     root = (stages_dir / run_id).resolve()
+    shutil.rmtree(root.parent / f"{root.name}.home", ignore_errors=True)
     is_git_root = _is_git_root(source)
     if is_git_root:
         _remove_worktree(source, root)
@@ -171,6 +214,13 @@ class Stage:
     source: Path
     root: Path
 
+    def home(self) -> Path:
+        return stage_home(self.root)
+
+    def python(self) -> str:
+        found = project_python(self.source)
+        return str(found) if found else sys.executable
+
     def status(self) -> str:
         result = _git(["status", "--short"], self.root)
         return (result.stdout or "") + (result.stderr or "")
@@ -180,28 +230,51 @@ class Stage:
         return result.stdout or ""
 
     def changed_files(self) -> list[str]:
-        result = _git(["diff", "--name-only", "--", "."], self.root)
-        names = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
-        porcelain = _git(["status", "--short"], self.root)
-        for line in (porcelain.stdout or "").splitlines():
-            name = line[3:].strip()
-            if name and name not in names:
-                names.append(name)
+        """Every path that differs from the last commit, one file per entry.
+
+        Untracked files are listed individually so a new directory publishes its
+        contents instead of being skipped as a directory. Renames contribute both
+        the new and the old path.
+        """
+        result = _git(
+            ["status", "--porcelain", "--untracked-files=all", "-z", "--", "."],
+            self.root,
+        )
+        entries = (result.stdout or "").split("\0")
+        names: list[str] = []
+        index = 0
+        while index < len(entries):
+            entry = entries[index]
+            index += 1
+            if len(entry) < 4:
+                continue
+            code, name = entry[:2], entry[3:]
+            paths = [name]
+            if "R" in code or "C" in code:
+                if index < len(entries) and entries[index]:
+                    paths.append(entries[index])
+                index += 1
+            for path in paths:
+                if path and path not in names:
+                    names.append(path)
         return names
 
     def publish(self) -> None:
+        source_root = self.source.resolve()
         for rel in self.changed_files():
             src = self.root / rel
             dest = self.source / rel
-            if not src.exists():
-                if dest.exists():
+            if not os.path.lexists(src):
+                if os.path.lexists(dest) and not dest.is_dir():
                     dest.unlink()
                 continue
+            if src.is_dir() and not src.is_symlink():
+                continue
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest = dest.resolve()
             try:
-                dest.relative_to(self.source.resolve())
+                dest.resolve().relative_to(source_root)
             except ValueError as exc:
                 raise IsolationError(f"refusing to publish outside the source tree: {rel}") from exc
-            if src.is_file():
-                shutil.copy2(src, dest)
+            if dest.is_symlink():
+                dest.unlink()
+            shutil.copy2(src, dest, follow_symlinks=False)

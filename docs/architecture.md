@@ -53,7 +53,13 @@ even when that directory sits inside another clone. If the path is a Git root, t
 detached Git worktree. Otherwise the files are copied and initialized as Git
 inside the stage so diff and status still work. The source tree is unchanged
 until `Stage.publish()` copies the verified delta. The web UI exposes publish
-as an explicit step after verification.
+as an explicit step after verification. `changed_files` lists untracked files
+one per entry, so a new directory publishes its contents rather than being
+skipped.
+
+Subprocesses started inside a stage get `HOME` set to a sibling directory
+(`<run_id>.home`), not a folder inside the stage. Caches and profiles a
+command writes never appear as changes, never reach review, and never publish.
 
 For a Git root, the working-tree overlay comes from `git ls-files`: tracked
 files plus nonignored untracked files. Ignored credentials, dependency trees,
@@ -66,12 +72,26 @@ template env files remain available.
 ## Verification
 
 When the model stops proposing tool calls, the runtime runs
-`run_checks(stage.root)`. That function executes pytest in the stage with a
-filtered environment. The boolean `passed` comes from the process exit code.
-There is no parameter for a model claim.
+`run_checks(stage.root, python=stage.python(), timeout=...)`. That function
+executes pytest in the stage with a filtered environment. The boolean `passed`
+comes from the process exit code. There is no parameter for a model claim.
+
+The interpreter is the repository's own `.venv/bin/python` (or `venv/`) when
+one exists, so the project's dependencies are what get tested. Otherwise it is
+the harness interpreter. The same choice applies when the agent runs `python`
+through `run_shell`. A suite that exceeds `workspace.check_timeout` (default
+300 seconds) is a failed verification with the partial output, not an exception.
+
+Repositories that are not pytest projects set `workspace.check_command`
+(for example `npm test` or `go test ./...`). The command is split with
+`shlex`, never handed to a shell, and runs with the same filtered environment.
+Its exit code is the verdict. The model cannot see or change this setting.
 
 Completion also requires an independent review record (`role: reviewer`) whose
-summary is not the principal's final text.
+summary is not the principal's final text. Review recognises test files in the
+common Python, JavaScript, Go, and Ruby layouts: `test_*`, `*_test.*`,
+`*.test.*`, `*.spec.*`, and anything under `tests/`, `test/`, `__tests__/`, or
+`spec/`.
 
 ## Provider boundary
 
