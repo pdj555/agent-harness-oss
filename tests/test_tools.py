@@ -99,3 +99,41 @@ def test_reviewer_cannot_edit(tmp_path: Path):
         assert "reviewer" in str(exc).lower() or "permission" in str(exc).lower()
     else:
         raise AssertionError("reviewer must not edit")
+
+
+def test_shell_python_resolves_to_the_repository_interpreter(tmp_path: Path):
+    source = copy_sample(tmp_path / "source")
+    (source / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+    git_init(source)
+    fake = source / ".venv" / "bin" / "python"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("#!/bin/sh\necho \"project-venv $*\"\nexit 0\n", encoding="utf-8")
+    fake.chmod(0o755)
+    stage = create_stage(source, tmp_path / "stages", "run-shell-venv")
+    output = execute("run_shell", {"command": "python -m pytest -q"}, stage=stage, role="principal")
+    assert output.splitlines()[0] == "exit 0"
+    assert "project-venv -m pytest -q" in output
+    assert stage.changed_files() == []
+
+
+def test_shell_timeout_is_reported_not_raised_through(tmp_path: Path):
+    stage = _ctx(tmp_path)
+    try:
+        execute("run_shell", {"command": "sleep 5"}, stage=stage, role="principal", timeout=1)
+    except ToolError as exc:
+        assert "timed out" in str(exc)
+    else:
+        raise AssertionError("a hung command must surface as a tool error")
+
+
+def test_search_skips_binary_and_oversized_files(tmp_path: Path):
+    from harness.tools import MAX_SEARCH_BYTES
+
+    stage = _ctx(tmp_path)
+    (stage.root / "blob.bin").write_bytes(b"needle\0binary")
+    (stage.root / "huge.txt").write_text("needle\n" + "x" * MAX_SEARCH_BYTES, encoding="utf-8")
+    (stage.root / "small.txt").write_text("needle here\n", encoding="utf-8")
+    found = execute("search", {"query": "needle"}, stage=stage, role="principal")
+    assert "small.txt:1" in found
+    assert "blob.bin" not in found
+    assert "huge.txt" not in found

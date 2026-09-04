@@ -3,8 +3,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-SKIP = {".git", ".harness", "__pycache__", ".pytest_cache", "node_modules", ".venv"}
+from harness.tools import SKIP_DIRS as SKIP
+from harness.tools import read_text_file
+
 MARKERS = ("TODO", "FIXME", "XXX", "HACK")
+MAX_SCAN_BYTES = 1_000_000
 
 
 def scan(root: Path) -> str:
@@ -19,11 +22,8 @@ def scan(root: Path) -> str:
         rel = path.relative_to(root)
         if any(part in SKIP for part in rel.parts):
             continue
-        if not path.is_file():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
+        text = read_text_file(path, MAX_SCAN_BYTES)
+        if text is None:
             continue
         for number, line in enumerate(text.splitlines(), start=1):
             if any(marker in line for marker in MARKERS):

@@ -43,9 +43,13 @@ Git status and diff run with `cwd` set to the stage.
 ## Shell
 
 `run_shell` uses `shlex.split` (no `shell=True`), forces `cwd` to the stage,
-replaces `python3` with the current interpreter, and passes a filtered
-environment without provider credentials. Timeout is 60 seconds. Git
-subprocesses use a filtered environment and `core.hooksPath=/dev/null`.
+replaces `python`/`python3` with the repository's own virtual environment
+interpreter when it has one (else the harness interpreter), and passes a
+filtered environment without provider credentials. `HOME` points at a
+directory beside the stage so nothing a command writes there enters the diff.
+The timeout is `workspace.check_timeout` (default 300 seconds); a timed-out
+command is reported to the model as a failure. Git subprocesses use a filtered
+environment and `core.hooksPath=/dev/null`.
 
 This is not an OS sandbox. A live model that can run Python can still touch
 the host as the same user. Treat live vendors as code execution. Bind to

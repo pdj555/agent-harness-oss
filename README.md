@@ -60,7 +60,9 @@ proven without a vendor. It is not the product.
 ## Configuration
 
 Copy [harness.example.toml](harness.example.toml) to `harness.toml` if you need
-to bind a different port or extra roots. Additional repositories:
+to bind a different port, extra roots, a longer `check_timeout`, or a
+`check_command` other than pytest (`npm test`, `go test ./...`). The command's
+exit code is the verdict. Additional repositories:
 
 ```bash
 uv run harness repo add ~/code/your-repo
