@@ -91,6 +91,16 @@ The runtime validates stage safety before verification, independent review,
 and publishing. If an escaping symlink is detected, it records a failed run
 and disables the stored stage reference instead of continuing the pipeline.
 
+Verification also records a SHA-256 fingerprint of the Git baseline, changed
+paths, and tracked/nonignored file contents, types, and modes. The fingerprint
+must remain stable through checks and review. Apply copies the stage into a
+temporary worktree, compares that frozen copy with the stored fingerprint,
+then publishes the copy. A later edit to the original stage cannot replace
+the checked files during copying. Fingerprints survive restarts in the run's
+verification record; older runs without one must be rerun. Ignored caches and
+file timestamps are excluded. This does not prevent concurrent source edits
+or turn the local process into an OS sandbox.
+
 Completion also requires an independent review record (`role: reviewer`) whose
 summary is not the principal's final text. Review recognises test files in the
 common Python, JavaScript, Go, and Ruby layouts: `test_*`, `*_test.*`,

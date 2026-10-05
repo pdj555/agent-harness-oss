@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -285,3 +286,51 @@ def test_publish_copies_new_nested_files_and_deletions(tmp_path: Path):
     stage.publish()
     assert (source / "pkg" / "sub" / "new.py").read_text(encoding="utf-8") == "x = 1\n"
     assert not (source / "README.md").exists()
+
+
+def test_verified_publish_uses_frozen_files_if_original_changes_during_copy(tmp_path: Path, monkeypatch):
+    source, original, stage = _stage(tmp_path)
+    updated = original + "\n# checked change\n"
+    (stage.root / "tracker.py").write_text(updated, encoding="utf-8")
+    digest = stage.content_digest()
+    copy = shutil.copy2
+
+    def mutate_original(src, dest, **kwargs):
+        if Path(dest) == source / "tracker.py":
+            (stage.root / "tracker.py").write_text("unchecked late edit\n", encoding="utf-8")
+        return copy(src, dest, **kwargs)
+
+    monkeypatch.setattr("harness.isolation.shutil.copy2", mutate_original)
+
+    stage.publish(expected_digest=digest)
+
+    assert (source / "tracker.py").read_text(encoding="utf-8") == updated
+    assert (stage.root / "tracker.py").read_text(encoding="utf-8") == "unchecked late edit\n"
+    assert not list(stage.root.parent.glob(".publish-*"))
+
+
+def test_verified_publish_accepts_nested_additions_and_deletions(tmp_path: Path):
+    source, _original, stage = _stage(tmp_path)
+    (stage.root / "pkg" / "sub").mkdir(parents=True)
+    (stage.root / "pkg" / "sub" / "new.py").write_text("x = 1\n", encoding="utf-8")
+    (stage.root / "README.md").unlink()
+
+    stage.publish(expected_digest=stage.content_digest())
+
+    assert (source / "pkg" / "sub" / "new.py").read_text(encoding="utf-8") == "x = 1\n"
+    assert not (source / "README.md").exists()
+    assert not list(stage.root.parent.glob(".publish-*"))
+
+
+@pytest.mark.parametrize("change", ["staged-deletion", "staged-rename"])
+def test_verified_publish_preserves_staged_deletions_and_renames(tmp_path: Path, change):
+    source, _original, stage = _stage(tmp_path)
+    readme = (source / "README.md").read_bytes()
+    args = ["rm", "README.md"] if change == "staged-deletion" else ["mv", "README.md", "NOTES.md"]
+    subprocess.run(["git", *args], cwd=stage.root, check=True, capture_output=True)
+
+    stage.publish(expected_digest=stage.content_digest())
+
+    assert not (source / "README.md").exists()
+    if change == "staged-rename":
+        assert (source / "NOTES.md").read_bytes() == readme
