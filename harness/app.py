@@ -190,7 +190,11 @@ def create_app(config: Config | None = None) -> FastAPI:
         run = store.get_run(run_id)
         if run is None or run.user_id != user.id:
             raise HTTPException(status_code=404, detail={"error": "run not found"})
-        if run.status != "completed" or not (run.verification or {}).get("passed"):
+        if (
+            run.status != "completed"
+            or not (run.verification or {}).get("passed")
+            or not (run.review or {}).get("passed")
+        ):
             raise HTTPException(
                 status_code=400, detail={"error": "only a verified completed run can be published"}
             )
@@ -199,11 +203,17 @@ def create_app(config: Config | None = None) -> FastAPI:
                 status_code=409,
                 detail={"error": "the isolated stage for this run no longer exists; run it again"},
             )
+        digest = (run.verification or {}).get("stage_digest")
+        if not digest:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "this run has no verified stage fingerprint; run it again"},
+            )
         repo = store.repo_by_id(run.repo_id, config.workspace_roots)
         if repo is None:
             raise HTTPException(status_code=404, detail={"error": "repository not found"})
         try:
-            Stage(id=run.id, source=repo.path, root=Path(run.stage_path)).publish()
+            Stage(id=run.id, source=repo.path, root=Path(run.stage_path)).publish(expected_digest=digest)
         except IsolationError as exc:
             raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
         store.add_event(run_id, "result", "Published verified files into the selected repository.")

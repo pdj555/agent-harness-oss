@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+from harness.runtime import execute_run
 from tests.conftest import signup
 
 
@@ -211,3 +213,94 @@ def test_publish_without_a_stage_is_a_clear_conflict(client, app):
     response = client.post(f"/api/runs/{run_id}/publish")
     assert response.status_code == 409
     assert "stage" in response.json()["error"].lower()
+
+
+@pytest.mark.parametrize(
+    "mutation", ["tracked-edit", "new-file", "untracked-edit", "untracked-delete", "delete", "mode"]
+)
+def test_publish_rejects_stage_changes_after_verification(client, app, workspace, mutation):
+    signup(client)
+    original = (workspace / "tracker.py").read_bytes()
+    if mutation.startswith("untracked-"):
+        (workspace / "notes.txt").write_text("checked notes\n", encoding="utf-8")
+    store = app.state.store
+    user = store.get_user_by_username("ada")
+    repo = store.list_repos(app.state.config.workspace_roots)[0]
+    run = store.create_run(user.id, repo.id, "Fix the failing tests and prove it.")
+    execute_run(run.id, store=store, config=app.state.config, provider=app.state.provider)
+    completed = store.get_run(run.id)
+    assert completed.status == "completed"
+    assert completed.verification["passed"] is True
+    stage = Path(completed.stage_path)
+    if mutation == "tracked-edit":
+        (stage / "tracker.py").write_bytes(original)
+    elif mutation == "new-file":
+        (stage / "unchecked.txt").write_text("never verified\n", encoding="utf-8")
+    elif mutation == "untracked-edit":
+        (stage / "notes.txt").write_text("never verified\n", encoding="utf-8")
+    elif mutation == "untracked-delete":
+        (stage / "notes.txt").unlink()
+    elif mutation == "delete":
+        (stage / "tracker.py").unlink()
+    else:
+        (stage / "tracker.py").chmod(0o755)
+
+    response = client.post(f"/api/runs/{run.id}/publish")
+
+    assert response.status_code == 409
+    assert "changed since verification" in response.json()["error"]
+    assert (workspace / "tracker.py").read_bytes() == original
+    assert not (workspace / "unchecked.txt").exists()
+    assert store.get_run(run.id).published_at is None
+    if mutation.startswith("untracked-"):
+        assert (workspace / "notes.txt").read_text(encoding="utf-8") == "checked notes\n"
+
+
+@pytest.mark.parametrize("missing_gate", ["fingerprint", "review"])
+def test_publish_requires_persisted_verification_and_review(client, app, workspace, missing_gate):
+    signup(client)
+    original = (workspace / "tracker.py").read_bytes()
+    store = app.state.store
+    user = store.get_user_by_username("ada")
+    repo = store.list_repos(app.state.config.workspace_roots)[0]
+    run = store.create_run(user.id, repo.id, "Fix the failing tests and prove it.")
+    execute_run(run.id, store=store, config=app.state.config, provider=app.state.provider)
+    completed = store.get_run(run.id)
+    assert completed.status == "completed"
+    if missing_gate == "fingerprint":
+        verification = dict(completed.verification)
+        verification.pop("stage_digest")
+        store.update_run(run.id, verification=verification)
+    else:
+        store.update_run(run.id, review={"passed": False})
+
+    response = client.post(f"/api/runs/{run.id}/publish")
+
+    assert response.status_code == (409 if missing_gate == "fingerprint" else 400)
+    assert (workspace / "tracker.py").read_bytes() == original
+    assert store.get_run(run.id).published_at is None
+
+
+def test_verified_stage_can_be_published_after_restart(client, app, workspace):
+    from fastapi.testclient import TestClient
+    from harness.app import create_app
+
+    signup(client)
+    store = app.state.store
+    user = store.get_user_by_username("ada")
+    repo = store.list_repos(app.state.config.workspace_roots)[0]
+    run = store.create_run(user.id, repo.id, "Fix the failing tests and prove it.")
+    execute_run(run.id, store=store, config=app.state.config, provider=app.state.provider)
+    completed = store.get_run(run.id)
+    assert completed.status == "completed"
+    checked = (Path(completed.stage_path) / "tracker.py").read_bytes()
+
+    with TestClient(create_app(app.state.config)) as restarted:
+        login = restarted.post("/api/login", json={"username": "ada", "password": "correct-horse"})
+        assert login.status_code == 200
+        response = restarted.post(f"/api/runs/{run.id}/publish")
+
+    assert response.status_code == 200
+    assert response.json()["published_at"]
+    assert response.json()["verification"]["stage_digest"] == completed.verification["stage_digest"]
+    assert (workspace / "tracker.py").read_bytes() == checked

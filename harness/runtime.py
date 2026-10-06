@@ -246,6 +246,7 @@ def _execute_run(run_id: str, *, store: Store, config: Config, provider: Provide
         if not _require_safe_stage(store, run_id, stage, "verification"):
             return
         store.update_run(run_id, active_work="Running verification.")
+        checked_digest = stage.content_digest()
         evidence = run_checks(
             stage.root,
             python=stage.python(),
@@ -268,16 +269,36 @@ def _execute_run(run_id: str, *, store: Store, config: Config, provider: Provide
         )
         if not _require_safe_stage(store, run_id, stage, "independent review"):
             return
+        if stage.content_digest() != checked_digest:
+            store.update_run(
+                run_id,
+                status="failed",
+                result="The isolated stage changed during verification; run it again.",
+                blockers=["stage changed during verification"],
+                active_work="",
+            )
+            return
+        verification = {**evidence.as_dict(), "stage_digest": checked_digest}
+        store.update_run(run_id, verification=verification, checks=[verification])
         review = run_review(stage, evidence, provider)
         store.update_run(run_id, review=review)
         store.add_event(run_id, "decision", review["summary"])
 
         if evidence.passed and review.get("passed"):
+            if stage.content_digest() != checked_digest:
+                store.update_run(
+                    run_id,
+                    status="failed",
+                    result="The isolated stage changed since verification; run it again.",
+                    blockers=["stage changed since verification"],
+                    active_work="",
+                )
+                return
             if config.auto_publish:
                 if not _require_safe_stage(store, run_id, stage, "publish"):
                     return
                 try:
-                    stage.publish()
+                    stage.publish(expected_digest=checked_digest)
                 except IsolationError as exc:
                     _fail_unsafe_stage(store, run_id, "publish", exc)
                     return

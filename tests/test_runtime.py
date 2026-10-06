@@ -298,3 +298,42 @@ def test_internal_error_fails_the_run_instead_of_leaving_it_running(tmp_path: Pa
     assert run.status == "failed"
     assert "disk vanished" in (run.result or "")
     assert "internal error" in run.blockers
+
+
+@pytest.mark.parametrize("phase", ["checks", "review"])
+def test_stage_change_during_checks_or_review_prevents_completion(tmp_path: Path, monkeypatch, phase):
+    import harness.runtime as runtime
+
+    store, config, run_id = _setup(tmp_path)
+    config.auto_publish = True
+    source = config.workspace_roots[0]
+    original = (source / "tracker.py").read_bytes()
+    if phase == "checks":
+        checks = runtime.run_checks
+
+        def changed_checks(root, **kwargs):
+            evidence = checks(root, **kwargs)
+            assert evidence.passed is True
+            (root / "tracker.py").write_bytes(original)
+            return evidence
+
+        monkeypatch.setattr(runtime, "run_checks", changed_checks)
+    else:
+        review = runtime.run_review
+
+        def changed_review(stage, evidence, provider):
+            result = review(stage, evidence, provider)
+            assert result["passed"] is True
+            (stage.root / "tracker.py").write_bytes(original)
+            return result
+
+        monkeypatch.setattr(runtime, "run_review", changed_review)
+
+    execute_run(run_id, store=store, config=config, provider=DeterministicProvider())
+
+    run = store.get_run(run_id)
+    assert run.status == "failed"
+    assert run.verification["passed"] is True  # Preserve the real process result.
+    assert any("stage changed" in blocker for blocker in run.blockers)
+    assert run.published_at is None
+    assert (source / "tracker.py").read_bytes() == original

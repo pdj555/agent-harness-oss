@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -147,10 +151,7 @@ def create_stage(source: Path, stages_dir: Path, run_id: str) -> Stage:
 
 
 def _overlay_working_tree(source: Path, root: Path) -> None:
-    listed = _git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], source)
-    if listed.returncode != 0:
-        raise IsolationError(listed.stderr.strip() or "git ls-files failed")
-    paths = [Path(raw) for raw in listed.stdout.split("\0") if raw]
+    paths = [Path(raw) for raw in _working_paths(source)]
     for rel in paths:
         _validate_overlay_path(rel)
         if _is_sensitive_env_file(rel):
@@ -164,6 +165,15 @@ def _overlay_working_tree(source: Path, root: Path) -> None:
                 f"refusing to stage credential-like file: {rel}; add it to .gitignore"
             )
         _overlay_entry(source / rel, _prepare_overlay_destination(root, rel))
+
+
+def _working_paths(root: Path) -> list[str]:
+    listed = _git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], root)
+    baseline = _git(["ls-tree", "-r", "--name-only", "-z", "HEAD"], root)
+    if listed.returncode or baseline.returncode:
+        raise IsolationError("cannot read the isolated stage's Git files")
+    # HEAD paths keep staged deletions visible even after Git's index drops them.
+    return sorted(set((listed.stdout + baseline.stdout).split("\0")) - {""})
 
 
 def _validate_overlay_path(rel: Path) -> None:
@@ -330,7 +340,50 @@ class Stage:
     def assert_safe(self) -> None:
         _assert_symlinks_stay_in_stage(self.root)
 
-    def publish(self) -> None:
+    def content_digest(self) -> str:
+        """Bind verification to Git's baseline and the publishable working files."""
+        self.assert_safe()
+        head = _git(["rev-parse", "HEAD"], self.root)
+        if head.returncode:
+            raise IsolationError("cannot read the isolated stage's Git state")
+        entries = []
+        for name in _working_paths(self.root):
+            rel = Path(name)
+            _validate_overlay_path(rel)
+            path = self.root / rel
+            try:
+                mode = path.lstat().st_mode
+                if stat.S_ISLNK(mode):
+                    content = os.readlink(path)
+                elif stat.S_ISREG(mode):
+                    with path.open("rb") as stream:
+                        content = hashlib.file_digest(stream, "sha256").hexdigest()
+                elif stat.S_ISDIR(mode):
+                    content = "directory"
+                else:
+                    raise IsolationError(f"unsupported stage file: {rel}")
+                entries.append((name, mode, content))
+            except (FileNotFoundError, NotADirectoryError):
+                entries.append((name, None, None))
+            except OSError as exc:
+                raise IsolationError(f"cannot read stage file: {rel}") from exc
+        payload = [head.stdout.strip(), sorted(self.changed_files()), entries]
+        return hashlib.sha256(json.dumps(payload, ensure_ascii=True).encode("utf-8")).hexdigest()
+
+    def publish(self, *, expected_digest: str | None = None) -> None:
+        if expected_digest is not None:
+            # Copy first, then compare and publish that copy. A later edit to the
+            # original stage cannot slip between the comparison and the writes.
+            with tempfile.TemporaryDirectory(prefix=".publish-", dir=self.root.parent) as temp:
+                frozen = create_stage(self.root, Path(temp), "files")
+                try:
+                    if frozen.content_digest() != expected_digest:
+                        raise IsolationError("isolated stage changed since verification; run it again")
+                    frozen.source = self.source
+                    frozen.publish()
+                finally:
+                    _remove_worktree(self.root, frozen.root)
+            return
         self.assert_safe()
         source_root = self.source.resolve()
         for rel in self.changed_files():
