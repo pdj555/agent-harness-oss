@@ -15,6 +15,10 @@ on:
         description: "Reviews per case per model"
         required: true
         default: "3"
+      sets:
+        description: "Case sets, comma separated"
+        required: true
+        default: "main,spec-attacks,same-shape,paired"
 
 permissions:
   contents: read
@@ -38,15 +42,17 @@ jobs:
         env:
           TRIALS: ${{ inputs.trials }}
           MAX_USD: ${{ inputs.max_usd }}
-        run: uv run python scripts/reviewer_sweep.py --trials "$TRIALS" --max-usd "$MAX_USD"
+          SETS: ${{ inputs.sets }}
+        run: uv run python scripts/reviewer_sweep.py --trials "$TRIALS" --max-usd "$MAX_USD" --sets "$SETS"
       - name: Run the sweep
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TRIALS: ${{ inputs.trials }}
           MAX_USD: ${{ inputs.max_usd }}
+          SETS: ${{ inputs.sets }}
         run: >-
           uv run python scripts/reviewer_sweep.py --run
-          --trials "$TRIALS" --max-usd "$MAX_USD" --out "$RUNNER_TEMP/sweep"
+          --trials "$TRIALS" --max-usd "$MAX_USD" --sets "$SETS" --out "$RUNNER_TEMP/sweep"
       # Every per-case report, kept 90 days. The repository keeps only the summary table:
       # it holds no historical run output (AGENTS.md, public boundary).
       - name: Keep the full run

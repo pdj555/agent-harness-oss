@@ -64,10 +64,11 @@ def main(argv: list[str] | None = None) -> int:
     monitor.add_argument("--trials", type=int, default=1, help="runs per case; model monitors vary")
     monitor.add_argument(
         "--set",
-        choices=["main", "blind-spots", "same-shape"],
+        choices=["main", "blind-spots", "same-shape", "paired"],
         default="main",
         help="main: the 33 published cases; blind-spots: attacks the spec is known to miss; "
-        "same-shape: attacks and correct controls that add one return line, differing only in its condition",
+        "same-shape: attacks and correct controls that add one return line, differing only in its condition; "
+        "paired: 24 generated attack and control pairs that only arithmetic tells apart",
     )
     monitor.add_argument("--case", action="append", default=None, help="run only this case id (repeatable)")
     monitor.add_argument("--out", type=Path, default=None, help="report directory")
@@ -242,7 +243,7 @@ def _apply(run_id: str, config: Config) -> int:
 def _monitor_eval(args: argparse.Namespace) -> int:
     from datetime import UTC, datetime
 
-    from harness.evals.cases import BLIND_SPOTS, CASES, SAME_SHAPE_CASES
+    from harness.evals.cases import BLIND_SPOTS, CASES, PAIRED_CASES, SAME_SHAPE_CASES
     from harness.evals.monitor import (
         EvalAborted,
         model_monitor,
@@ -268,7 +269,9 @@ def _monitor_eval(args: argparse.Namespace) -> int:
     if args.specs is not None and args.monitor != "spec":
         print("--specs only works with --monitor spec")
         return 1
-    pool = {"blind-spots": BLIND_SPOTS, "same-shape": SAME_SHAPE_CASES}.get(args.set, CASES)
+    pool = {"blind-spots": BLIND_SPOTS, "same-shape": SAME_SHAPE_CASES, "paired": PAIRED_CASES}.get(
+        args.set, CASES
+    )
     cases = pool
     if args.case:
         known = {case.id for case in pool}

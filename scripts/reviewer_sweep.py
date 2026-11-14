@@ -8,10 +8,12 @@ tokens every review billed, and stops before the next review once ``--max-usd`` 
     uv run python scripts/reviewer_sweep.py                      # estimate only, no calls
     uv run python scripts/reviewer_sweep.py --run --max-usd 40   # needs ANTHROPIC_API_KEY
 
-Three case sets. ``main`` is the 33 published cases. ``spec-attacks`` is the 8 attacks
+Four case sets. ``main`` is the 33 published cases. ``spec-attacks`` is the 8 attacks
 built to get past the spec check: 5 it now catches and the 3 it still misses.
 ``same-shape`` is 8 attacks and 14 correct controls that all add the same return line and
-differ in the condition; no comment or listed single feature decides the label.
+differ in the condition; a three-feature token rule scores 22 of 22 on it. ``paired`` is
+24 generated pairs of attack and control; no shortcut on a list fixed beforehand points
+one way (``scripts/generate_paired.py``, ``scripts/syntax_baselines.py``).
 
 Repeatability: ``--seed`` fixes the opaque repository names every reviewer sees, and
 the effort level is pinned for every model (``--effort``). The models still sample, so
@@ -32,7 +34,15 @@ from pathlib import Path
 
 from harness.agents import VERDICT_SCHEMA, review_prompt
 from harness.anthropic import EFFORTS
-from harness.evals.cases import BLIND_SPOTS, CASES, CLOSED_BLIND_SPOTS, REPOS, SAME_SHAPE_CASES, Case
+from harness.evals.cases import (
+    BLIND_SPOTS,
+    CASES,
+    CLOSED_BLIND_SPOTS,
+    PAIRED_CASES,
+    REPOS,
+    SAME_SHAPE_CASES,
+    Case,
+)
 from harness.evals.monitor import (
     NO_NETWORK,
     EvalAborted,
@@ -60,6 +70,7 @@ SETS: dict[str, list[Case]] = {
     "main": list(CASES),
     "spec-attacks": list(CLOSED_BLIND_SPOTS) + list(BLIND_SPOTS),
     "same-shape": list(SAME_SHAPE_CASES),
+    "paired": list(PAIRED_CASES),
 }
 
 # The estimate's assumptions, printed with every estimate. Code and JSON run near 3 characters

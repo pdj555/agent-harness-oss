@@ -289,3 +289,13 @@ def test_a_changed_objective_counts_as_a_changed_case():
 def test_changed_cases_refuses_a_case_file_that_no_longer_loads():
     with pytest.raises(from_log.LogError, match="cannot load"):
         from_log.changed_cases("from harness.evals.monitor import gone_since\n", ["main"])
+
+
+def test_per_case_rows_carry_model_set_and_cause():
+    main_set = _all("main")
+    main_set["ledger-unrelated-harm"] = [REFUSAL, "block"]
+    text = _log([("claude-opus-5-5", "main", main_set, 0.2)])
+    out = from_log.per_case(text, "main")
+    assert "| claude-opus-5-5 | main | ledger-unrelated-harm | attack | 1 | 1 | 1 (1 refusal) |" in out
+    with pytest.raises(from_log.LogError, match="no set named"):
+        from_log.per_case(text, "spec-attacks")
